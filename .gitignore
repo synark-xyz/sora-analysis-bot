@@ -20,3 +20,4 @@ logs/
 *.tmp
 .coverage
 node_modules/
+.tg_offset

@@ -56,14 +56,14 @@ def run_pipeline(symbol: str, market: str = 'us', timeframe: str = 'swing') -> d
             return _build_result(
                 symbol=symbol, verdict="HOLD", confidence=confidence.total,
                 strategy=strategy.name, reason=confidence.verdict,
-                regime=regime.regime,
+                regime=regime.regime, indicators=indicators,
             )
 
         if not _validate_confluence(strategy.name, signal, indicators, regime):
             return _build_result(
                 symbol=symbol, verdict="HOLD", confidence=confidence.total,
                 strategy=strategy.name, reason="CONFLUENCE_REJECTED",
-                regime=regime.regime,
+                regime=regime.regime, indicators=indicators,
             )
 
         verdict_str = signal.direction.value
@@ -72,7 +72,31 @@ def run_pipeline(symbol: str, market: str = 'us', timeframe: str = 'swing') -> d
         stop_loss = _compute_stop_loss(signal, entry_price, strategy.risk_params, indicators)
         take_profit = _compute_take_profit(signal, entry_price, strategy.risk_params)
 
-        return _build_result(
+        from engine.signal_gate import check_gate, compute_rr
+        gate = check_gate(
+            verdict=verdict_str,
+            indicators=indicators,
+            entry_price=entry_price,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            confidence=confidence.total,
+            regime=regime.regime,
+            symbol=symbol,
+            market=market,
+        )
+
+        if not gate.passed:
+            result = _build_result(
+                symbol=symbol, verdict="HOLD", confidence=confidence.total,
+                strategy=strategy.name, reason=f"GATE_REJECT: {gate.fail_reason}",
+                regime=regime.regime, indicators=indicators,
+            )
+            result["gate_passed"] = False
+            result["gate_scorecard"] = gate.scorecard_text()
+            return result
+
+        rr = compute_rr(entry_price, stop_loss, take_profit)
+        result = _build_result(
             symbol=symbol, verdict=verdict_str,
             confidence=confidence.total,
             strategy=strategy.name,
@@ -84,7 +108,12 @@ def run_pipeline(symbol: str, market: str = 'us', timeframe: str = 'swing') -> d
             confidence_breakdown=confidence.breakdown,
             atr=indicators.get("atr_14"),
             timeframe=timeframe,
+            indicators=indicators,
         )
+        result["gate_passed"] = True
+        result["gate_scorecard"] = gate.scorecard_text()
+        result["rr_ratio"] = rr
+        return result
 
     except Exception as e:
         return None
@@ -159,6 +188,11 @@ def _compute_indicators(symbol: str, bars: list[dict]) -> dict:
 
     indicators["vwap_5"] = _vwap(closes, volumes, 5)
     indicators["vwap_20"] = _vwap(closes, volumes, 20)
+
+    stoch_k, stoch_d = _stoch(highs, lows, closes)
+    indicators["stoch_k"] = stoch_k
+    indicators["stoch_d"] = stoch_d
+    indicators["williams_r"] = _williams_r(highs, lows, closes)
 
     return indicators
 
@@ -267,6 +301,7 @@ def _build_result(
     confidence_breakdown: dict | None = None,
     atr: float | None = None,
     timeframe: str = "swing",
+    indicators: dict | None = None,
 ) -> dict:
     zone_half = atr * 0.5 if atr else 0
     entry_low = (entry_price - zone_half) if entry_price else None
@@ -292,7 +327,120 @@ def _build_result(
     }
     if confidence_breakdown:
         result["confidence_breakdown"] = confidence_breakdown
+    if indicators:
+        result["tech_conditions"] = _assess_conditions(indicators)
     return result
+
+
+def _stoch(highs: list[float], lows: list[float], closes: list[float], period: int = 14) -> tuple[float, float]:
+    if len(closes) < period + 1:
+        return 50.0, 50.0
+    recent_high = max(highs[-period:])
+    recent_low = min(lows[-period:])
+    if recent_high == recent_low:
+        return 50.0, 50.0
+    k = (closes[-1] - recent_low) / (recent_high - recent_low) * 100
+
+    def _k_at(i: int) -> float | None:
+        end = -i + 1 if i > 1 else None
+        h = highs[-period - i + 1: end]
+        l = lows[-period - i + 1: end]
+        c = closes[-i]
+        if not h or not l:
+            return None
+        hi, lo = max(h), min(l)
+        if hi == lo:
+            return None
+        return (c - lo) / (hi - lo) * 100
+
+    if len(closes) >= period + 3:
+        k_vals = [_k_at(i) for i in range(1, 4)]
+        valid = [v for v in k_vals if v is not None]
+        d = sum(valid) / len(valid) if valid else k
+    else:
+        d = k
+    return round(k, 1), round(d, 1)
+
+
+def _williams_r(highs: list[float], lows: list[float], closes: list[float], period: int = 14) -> float:
+    if len(closes) < period + 1:
+        return -50.0
+    recent_high = max(highs[-period:])
+    recent_low = min(lows[-period:])
+    if recent_high == recent_low:
+        return -50.0
+    return round((recent_high - closes[-1]) / (recent_high - recent_low) * -100, 1)
+
+
+def _assess_conditions(indicators: dict) -> dict:
+    labels = {}
+
+    rsi = indicators.get("rsi_14", 50)
+    if rsi <= 20:
+        labels["rsi"] = "severely-oversold"
+    elif rsi <= 30:
+        labels["rsi"] = "oversold"
+    elif rsi >= 80:
+        labels["rsi"] = "severely-overbought"
+    elif rsi >= 70:
+        labels["rsi"] = "overbought"
+    else:
+        labels["rsi"] = "neutral"
+
+    stoch_k = indicators.get("stoch_k", 50)
+    if stoch_k <= 10:
+        labels["stoch"] = "severely-oversold"
+    elif stoch_k <= 20:
+        labels["stoch"] = "oversold"
+    elif stoch_k >= 90:
+        labels["stoch"] = "severely-overbought"
+    elif stoch_k >= 80:
+        labels["stoch"] = "overbought"
+    else:
+        labels["stoch"] = "neutral"
+
+    wr = indicators.get("williams_r", -50)
+    if wr <= -90:
+        labels["williams_r"] = "severely-oversold"
+    elif wr <= -80:
+        labels["williams_r"] = "oversold"
+    elif wr >= -10:
+        labels["williams_r"] = "severely-overbought"
+    elif wr >= -20:
+        labels["williams_r"] = "overbought"
+    else:
+        labels["williams_r"] = "neutral"
+
+    price = indicators.get("price", 0)
+    bb_lower = indicators.get("bb_lower")
+    bb_upper = indicators.get("bb_upper")
+    if price and bb_lower and bb_upper:
+        if price <= bb_lower:
+            labels["bb"] = "oversold"
+        elif price >= bb_upper:
+            labels["bb"] = "overbought"
+        else:
+            labels["bb"] = "neutral"
+    else:
+        labels["bb"] = "neutral"
+
+    extreme_count = sum(1 for v in labels.values() if v.startswith("severely"))
+    signal_count = sum(1 for v in labels.values() if v in ("oversold", "overbought"))
+    if extreme_count >= 2:
+        labels["overall"] = "extreme"
+    elif signal_count >= 3:
+        oversold_count = sum(1 for v in labels.values() if v == "oversold")
+        overbought_count = sum(1 for v in labels.values() if v == "overbought")
+        if oversold_count > overbought_count:
+            labels["overall"] = "oversold"
+        elif overbought_count > oversold_count:
+            labels["overall"] = "overbought"
+        else:
+            labels["overall"] = "mixed"
+    else:
+        labels["overall"] = "neutral"
+
+    return labels
 
 
 def _rsi(closes: list[float], period: int = 14) -> float:
@@ -599,3 +747,68 @@ async def run_analysis(
 async def get_bars(symbol: str) -> list[dict]:
     import asyncio
     return await asyncio.to_thread(_fetch_bars, symbol, _detect_market(symbol))
+
+
+def quick_score(symbol: str, market: str | None = None) -> dict:
+    if market is None:
+        market = _detect_market(symbol)
+    bars = _fetch_bars(symbol, market)
+    if not bars or len(bars) < 20:
+        return {"symbol": symbol, "score": 0}
+
+    ind = _compute_indicators(symbol, bars)
+
+    score = 50.0
+    reasons = []
+
+    rsi = ind.get("rsi_14", 50)
+    if rsi > 70 or rsi < 30:
+        score += 15
+        reasons.append(f"RSI={rsi:.0f} extreme")
+    elif 40 <= rsi <= 60:
+        score += 5
+        reasons.append(f"RSI={rsi:.0f} neutral")
+    else:
+        reasons.append(f"RSI={rsi:.0f}")
+
+    adx = ind.get("adx", 0)
+    if adx >= 25:
+        score += 15
+        reasons.append(f"ADX={adx:.0f} trending")
+    else:
+        reasons.append(f"ADX={adx:.0f} weak")
+
+    price = ind.get("price", 0)
+    ema20 = ind.get("ema_20")
+    ema50 = ind.get("ema_50")
+    if price and ema20 and ema50:
+        if price > ema20 > ema50:
+            score += 10
+            reasons.append("bullish stack")
+        elif price < ema20 < ema50:
+            score += 10
+            reasons.append("bearish stack")
+        else:
+            score -= 5
+            reasons.append("mixed EMAs")
+
+    vol_ratio = ind.get("volume_ratio", 1.0)
+    if vol_ratio > 1.5:
+        score += 10
+        reasons.append(f"vol {vol_ratio:.1f}x")
+    elif vol_ratio < 0.5:
+        score -= 10
+        reasons.append(f"vol {vol_ratio:.1f}x low")
+
+    atr = ind.get("atr_14", 0)
+    if price and atr:
+        atr_pct = atr / price * 100
+        if 0.5 <= atr_pct <= 4.0:
+            score += 10
+            reasons.append(f"ATR {atr_pct:.1f}% healthy")
+        else:
+            score -= 5
+            reasons.append(f"ATR {atr_pct:.1f}%")
+
+    score = max(0, min(100, int(round(score))))
+    return {"symbol": symbol, "score": score, "reasons": reasons}

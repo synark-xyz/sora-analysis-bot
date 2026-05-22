@@ -1,13 +1,22 @@
 import asyncio
+import json
 import os
 import re
 import sys
+import time
 from datetime import datetime
+from pathlib import Path
+
+_OFFSET_FILE = Path(__file__).parent.parent / ".tg_offset"
 
 try:
     import httpx
 except ImportError:
     httpx = None
+
+from log import get_logger
+
+log = get_logger("telegram.handler", "TELEGRAM")
 
 from telegram.formatter import (
     format_signal_report,
@@ -76,10 +85,16 @@ class TelegramHandler:
             "disable_web_page_preview": True,
         }
         try:
+            t0 = time.monotonic()
             r = await self.http_client.post(url, json=payload)
-            return r.json()
+            elapsed = time.monotonic() - t0
+            data = r.json()
+            if data.get("ok"):
+                log.http("sendMessage OK  %.1fs", elapsed)
+            else:
+                log.http("sendMessage FAIL  %.1fs  %s", elapsed, data.get("description", ""))
+            return data
         except Exception as e:
-            print(f"[Telegram] send_message error: {e}")
             return None
 
     async def send_photo(self, photo_bytes, caption="", chat_id=None):
@@ -92,8 +107,7 @@ class TelegramHandler:
         try:
             r = await self.http_client.post(url, data=data, files=files)
             return r.json()
-        except Exception as e:
-            print(f"[Telegram] send_photo error: {e}")
+        except Exception:
             return None
 
     async def send_action(self, action="typing", chat_id=None):
@@ -120,10 +134,14 @@ class TelegramHandler:
             "allowed_updates": ["message"],
         }
         try:
+            t0 = time.monotonic()
             r = await self.http_client.get(url, params=params)
+            elapsed = time.monotonic() - t0
             data = r.json()
-        except Exception as e:
-            print(f"[Telegram] poll error: {e}")
+            updates = len(data.get("result", []))
+            if updates:
+                log.http("getUpdates OK  %d updates  %.1fs", updates, elapsed)
+        except Exception:
             return offset
 
         if not data.get("ok"):
@@ -138,21 +156,22 @@ class TelegramHandler:
         return offset
 
     async def _handle_update(self, update):
-        message = update.get("message")
-        if not message:
-            return
-        chat_id = message.get("chat", {}).get("id")
-        text = message.get("text", "").strip()
-        if not text:
-            return
+        try:
+            message = update.get("message")
+            if not message:
+                return
+            chat_id = message.get("chat", {}).get("id")
+            text = message.get("text", "").strip()
+            if not text:
+                return
 
-        if text.startswith("/"):
-            parts = text.split(maxsplit=1)
-            cmd = parts[0].lower()
-            args = parts[1] if len(parts) > 1 else ""
-            await self._route_command(cmd, args, chat_id)
-        else:
-            pass
+            if text.startswith("/"):
+                parts = text.split(maxsplit=1)
+                cmd = parts[0].split("@")[0].lower()
+                args = parts[1] if len(parts) > 1 else ""
+                await self._route_command(cmd, args, chat_id)
+        except Exception as e:
+            log.error("unhandled error in update %s: %s", update.get("update_id"), e)
 
     async def _route_command(self, cmd, args, chat_id):
         await self.send_action(chat_id=chat_id)
@@ -177,6 +196,8 @@ class TelegramHandler:
             "/sentiment": self._handle_sentiment,
             "/why": self._handle_why,
             "/think": self._handle_think,
+            "/clear": self._handle_clear,
+            "/cancel": self._handle_clear,
         }
 
         handler = cmd_map.get(cmd)
@@ -219,16 +240,19 @@ class TelegramHandler:
             )
         except ImportError:
             signal = self._mock_signal(symbol)
+        except Exception as e:
+            log.error("run_analysis failed for %s: %s", symbol, e)
+            await self.send_message(f"Analysis failed for {symbol}: {e}", chat_id=chat_id)
+            return
 
         report = format_signal_report(signal)
         await self.send_message(report, chat_id=chat_id)
 
         if signal.get("verdict") != "HOLD":
             try:
-                saved_id = save_signal(signal)
-                print(f"[Signal] Saved {symbol} signal id={saved_id}")
-            except Exception as e:
-                print(f"[Signal] Save error: {e}")
+                save_signal(signal)
+            except Exception:
+                pass
 
     async def _handle_watchlist(self, args, chat_id):
         if not args:
@@ -420,13 +444,14 @@ class TelegramHandler:
             for sym in symbols:
                 try:
                     from engine.orchestrator import quick_score
-                    score = await quick_score(sym)
-                except ImportError:
+                    score = await asyncio.to_thread(quick_score, sym)
+                except Exception:
                     score = {"symbol": sym, "score": 50}
-                await self.send_message(
-                    f"<b>{sym}</b>: technical score {score.get('score', 'N/A')}/100",
-                    chat_id=chat_id,
-                )
+                reasons = score.get("reasons")
+                msg = f"<b>{sym}</b>: {score.get('score', 'N/A')}/100"
+                if reasons:
+                    msg += "\n  " + " · ".join(reasons)
+                await self.send_message(msg, chat_id=chat_id)
                 await asyncio.sleep(0.5)
         else:
             for sym in symbols:
@@ -434,11 +459,21 @@ class TelegramHandler:
                 try:
                     from engine.orchestrator import run_analysis
                     signal = await run_analysis(symbol=sym)
-                except ImportError:
-                    signal = self._mock_signal(sym)
+                except Exception as e:
+                    await self.send_message(
+                        f"<b>{sym}</b> analysis error: {e}",
+                        chat_id=chat_id,
+                    )
+                    continue
 
-                report = format_signal_report(signal)
-                await self.send_message(report, chat_id=chat_id)
+                try:
+                    report = format_signal_report(signal)
+                    await self.send_message(report, chat_id=chat_id)
+                except Exception as e:
+                    await self.send_message(
+                        f"<b>{sym}</b> report error: {e}",
+                        chat_id=chat_id,
+                    )
 
                 if signal.get("verdict") != "HOLD":
                     try:
@@ -542,6 +577,14 @@ class TelegramHandler:
                 chat_id=chat_id,
             )
 
+    async def _handle_clear(self, args, chat_id):
+        if self.http_client:
+            url = f"{self.base_url}/getUpdates"
+            await self.http_client.get(url, params={"offset": -1})
+        await self.send_message(
+            "Cleared all pending updates.", chat_id=chat_id
+        )
+
     def _detect_market(self, symbol):
         known_crypto = {"BTC", "ETH", "SOL", "BNB", "AVAX", "LINK", "DOT", "MATIC", "ADA", "XRP", "DOGE"}
         return "crypto" if symbol in known_crypto else "us"
@@ -612,17 +655,18 @@ class TelegramHandler:
 
     async def run(self):
         if httpx is None:
-            print("[Telegram] httpx not installed. Install with: pip install httpx")
             return
 
         await self._ensure_client()
-        print("[Telegram] Handler started")
-        offset = 0
+        try:
+            offset = int(_OFFSET_FILE.read_text().strip())
+        except Exception:
+            offset = 0
 
         while self.running:
             offset = await self.poll_updates(offset)
+            _OFFSET_FILE.write_text(str(offset))
             await asyncio.sleep(1)
 
         if self.http_client:
             await self.http_client.aclose()
-        print("[Telegram] Handler stopped")

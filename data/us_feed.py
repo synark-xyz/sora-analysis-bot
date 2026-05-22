@@ -6,7 +6,12 @@ Falls back to empty bars if Alpaca is unavailable.
 """
 
 import os
+import time
 from datetime import datetime, timezone, timedelta
+
+from log import get_logger
+
+log = get_logger("data.us_feed", "DATA")
 
 
 def fetch_bars(symbol: str, days: int = 90) -> list[dict]:
@@ -32,7 +37,9 @@ def fetch_bars(symbol: str, days: int = 90) -> list[dict]:
             limit=500,
             feed=DataFeed.IEX,
         )
+        t0 = time.monotonic()
         raw = client.get_stock_bars(req)
+        elapsed = time.monotonic() - t0
         bars_data = raw.data.get(symbol, [])
         bars = [
             {
@@ -45,6 +52,7 @@ def fetch_bars(symbol: str, days: int = 90) -> list[dict]:
             }
             for b in bars_data
         ]
+        log.http("Alpaca %s  %d bars  %.1fs", symbol, len(bars), elapsed)
         if bars:
             return bars
     except Exception:

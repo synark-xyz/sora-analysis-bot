@@ -8,8 +8,13 @@ and runs ADX/trend/volatility analysis.
 
 import os
 import math
+import time
 from datetime import datetime, timezone, timedelta
 from dataclasses import dataclass
+
+from log import get_logger
+
+log = get_logger("engine.regime", "REGME")
 
 
 REGIME_LABELS = {
@@ -64,7 +69,9 @@ def _fetch_alpaca_spy(days: int = 90) -> list[dict]:
             limit=200,
             feed=DataFeed.IEX,
         )
+        t0 = time.monotonic()
         raw = client.get_stock_bars(req)
+        elapsed = time.monotonic() - t0
         bars_data = raw.data.get("SPY", [])
         bars = [
             {
@@ -77,6 +84,7 @@ def _fetch_alpaca_spy(days: int = 90) -> list[dict]:
             }
             for b in bars_data
         ]
+        log.http("Alpaca SPY  %d bars  %.1fs", len(bars), elapsed)
         if bars:
             return bars
     except Exception:
@@ -93,7 +101,9 @@ def fetch_crypto_bars(days: int = 90) -> list[dict]:
             f"https://api.coingecko.com/api/v3/coins/bitcoin/ohlc"
             f"?vs_currency={vs_currency}&days={days}"
         )
+        t0 = time.monotonic()
         resp = requests.get(url, timeout=15)
+        elapsed = time.monotonic() - t0
         if resp.status_code != 200:
             return _get_mock_bars(days)
         data = resp.json()
@@ -108,6 +118,7 @@ def fetch_crypto_bars(days: int = 90) -> list[dict]:
                 "close": float(c),
                 "volume": 0,
             })
+        log.http("CoinGecko BTC  %d bars  %.1fs", len(bars), elapsed)
         if len(bars) > 1:
             return bars
     except Exception:

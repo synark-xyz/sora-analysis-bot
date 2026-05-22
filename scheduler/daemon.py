@@ -65,7 +65,7 @@ class Daemon:
         if crypto_hour % 4 == 0 and now_et.minute == 0:
             key = f"crypto_{now_et.date()}_{crypto_hour}"
             if self._last_scans.get(key) != now_et.isoformat(timespec="h"):
-                self._last_scans[key] = now_et.isoformat(timespec="h")
+                self._last_scans[key] = now_et.isoformat(timespec="hours")
                 await self._run_crypto_scan()
 
         if now_et.weekday() == 6 and now_et.hour == 20 and now_et.minute == 0:
@@ -87,20 +87,22 @@ class Daemon:
                 print("[Daemon] No US symbols in watchlist")
                 return
 
-            results = await run_pipeline(symbols=us_symbols, scan_name=scan_name)
+            from telegram.handler import TelegramHandler
+            from telegram.formatter import format_signal_report
+            handler = TelegramHandler()
 
-            try:
-                from telegram.handler import TELEGRAM_CHAT_ID
-                from telegram.handler import TelegramHandler
-
-                handler = TelegramHandler()
-                for signal in results:
-                    from telegram.formatter import format_signal_report
-                    report = format_signal_report(signal)
-                    await handler.send_message(report)
-            except ImportError:
-                for s in us_symbols:
-                    print(f"[Daemon] Signal ready: {s}")
+            for sym in us_symbols:
+                try:
+                    signal = await asyncio.to_thread(run_pipeline, sym, "us", "swing")
+                    if signal and signal.get("verdict") != "HOLD" and signal.get("gate_passed"):
+                        report = format_signal_report(signal)
+                        await handler.send_message(report)
+                        print(f"[Daemon] Signal fired: {sym} {signal.get('verdict')}")
+                    else:
+                        verdict = signal.get("verdict", "None") if signal else "None"
+                        print(f"[Daemon] {sym} skipped ({verdict})")
+                except Exception as e:
+                    print(f"[Daemon] {sym} pipeline error: {e}")
 
             print(f"[Daemon] US scan complete: {scan_name}")
         except ImportError as e:
@@ -120,18 +122,22 @@ class Daemon:
             if not crypto_symbols:
                 return
 
-            results = await run_pipeline(symbols=crypto_symbols, scan_name="crypto")
+            from telegram.handler import TelegramHandler
+            from telegram.formatter import format_signal_report
+            handler = TelegramHandler()
 
-            try:
-                from telegram.handler import TelegramHandler
-
-                handler = TelegramHandler()
-                for signal in results:
-                    from telegram.formatter import format_signal_report
-                    report = format_signal_report(signal)
-                    await handler.send_message(report)
-            except ImportError:
-                pass
+            for sym in crypto_symbols:
+                try:
+                    signal = await asyncio.to_thread(run_pipeline, sym, "crypto", "swing")
+                    if signal and signal.get("verdict") != "HOLD" and signal.get("gate_passed"):
+                        report = format_signal_report(signal)
+                        await handler.send_message(report)
+                        print(f"[Daemon] Signal fired: {sym} {signal.get('verdict')}")
+                    else:
+                        verdict = signal.get("verdict", "None") if signal else "None"
+                        print(f"[Daemon] {sym} skipped ({verdict})")
+                except Exception as e:
+                    print(f"[Daemon] {sym} pipeline error: {e}")
 
             print(f"[Daemon] Crypto scan complete: {len(crypto_symbols)} symbols")
         except ImportError as e:

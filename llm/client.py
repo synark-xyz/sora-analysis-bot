@@ -1,23 +1,53 @@
 import asyncio
 import hashlib
 import json
-import logging
 import os
 import sqlite3
+import time
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 import httpx
 
-logger = logging.getLogger(__name__)
+from log import get_logger
+
+log = get_logger("llm.client", "LLM")
 
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
-DEFAULT_MODEL = "google/gemini-2.5-flash"
-FAST_MODEL = "deepseek/deepseek-v4-flash:free"
-ANALYSIS_MODEL = "deepseek/deepseek-v4-flash:free"
+DEFAULT_MODEL = "openrouter/free"
+FAST_MODEL = "openrouter/free"
+ANALYSIS_MODEL = "openrouter/free"
 CACHE_TTL_HOURS = 5
-MAX_RETRIES = 3
-RETRY_BASE_WAIT = 2.0
+MAX_RETRIES = 5
+RETRY_BASE_WAIT = 15.0
+RATE_LIMIT_RPM = 4
+
+
+class TokenBucket:
+    def __init__(self, rate: float, capacity: int):
+        self._rate = rate / 60.0
+        self._capacity = capacity
+        self._tokens = float(capacity)
+        self._last_refill = time.monotonic()
+        self._lock = asyncio.Lock()
+
+    async def acquire(self) -> float:
+        async with self._lock:
+            now = time.monotonic()
+            elapsed = now - self._last_refill
+            self._tokens = min(self._capacity, self._tokens + elapsed * self._rate)
+            self._last_refill = now
+
+            if self._tokens >= 1:
+                self._tokens -= 1
+                return 0.0
+
+            wait = (1 - self._tokens) / self._rate if self._rate > 0 else 1.0
+            self._tokens = 0.0
+            return wait
+
+
+_bucket = TokenBucket(RATE_LIMIT_RPM, 1)
 
 
 def _get_api_key() -> str:
@@ -54,8 +84,8 @@ class LLMClient:
             )
             conn.commit()
             conn.close()
-        except Exception as e:
-            logger.debug("Cache table error: %s", e)
+        except Exception:
+            pass
 
     async def complete(
         self,
@@ -73,6 +103,10 @@ class LLMClient:
             if cached is not None:
                 return cached
 
+        wait = await _bucket.acquire()
+        if wait > 0:
+            await asyncio.sleep(wait)
+
         payload = {
             "model": model,
             "messages": messages,
@@ -84,23 +118,18 @@ class LLMClient:
         for attempt in range(MAX_RETRIES):
             try:
                 async with httpx.AsyncClient(timeout=60) as client:
+                    t0 = time.monotonic()
                     resp = await client.post(
                         OPENROUTER_BASE + "/chat/completions",
                         headers=self._headers(),
                         json=payload,
                     )
+                    elapsed = time.monotonic() - t0
 
                 if resp.status_code == 429:
-                    wait = float(
-                        resp.headers.get(
-                            "Retry-After", RETRY_BASE_WAIT * (2**attempt)
-                        )
-                    )
-                    logger.warning(
-                        "OpenRouter rate limited — sleeping %.1fs (attempt %d)",
-                        wait,
-                        attempt + 1,
-                    )
+                    retry_after = resp.headers.get("Retry-After")
+                    wait = float(retry_after) if retry_after else RETRY_BASE_WAIT * (2**attempt)
+                    last_error = RuntimeError(f"rate limited (429), retry-after={retry_after}")
                     await asyncio.sleep(wait)
                     continue
 
@@ -114,6 +143,15 @@ class LLMClient:
                 data = resp.json()
                 content = data["choices"][0]["message"]["content"]
 
+                if not content:
+                    last_error = RuntimeError("empty content from model")
+                    continue
+
+                log.http(
+                    "OK  %s  tokens=%d  %.1fs",
+                    model, data.get("usage", {}).get("total_tokens", 0), elapsed,
+                )
+
                 if use_cache:
                     self._cache_set(cache_key, content)
 
@@ -122,15 +160,8 @@ class LLMClient:
             except (httpx.RequestError, httpx.HTTPStatusError) as e:
                 last_error = e
                 wait = RETRY_BASE_WAIT * (2**attempt)
-                logger.warning(
-                    "OpenRouter request failed (attempt %d): %s — retry in %.1fs",
-                    attempt + 1,
-                    e,
-                    wait,
-                )
                 if attempt < MAX_RETRIES - 1:
                     await asyncio.sleep(wait)
-
         raise RuntimeError(
             f"OpenRouter failed after {MAX_RETRIES} attempts: {last_error}"
         )
@@ -210,8 +241,7 @@ class LLMClient:
                 if datetime.now(timezone.utc) > exp:
                     return None
             return output
-        except Exception as e:
-            logger.debug("Cache get error: %s", e)
+        except Exception:
             return None
 
     def _cache_set(self, key: str, output: str) -> None:
@@ -235,5 +265,5 @@ class LLMClient:
             )
             conn.commit()
             conn.close()
-        except Exception as e:
-            logger.debug("Cache set error: %s", e)
+        except Exception:
+            pass

@@ -6,10 +6,14 @@ Sources:
   - CryptoPanic RSS (free, no key) for crypto
 """
 
+import time
 import requests
 from xml.etree import ElementTree
 from datetime import datetime
 
+from log import get_logger
+
+log = get_logger("analysis.news", "NEWS")
 
 YAHOO_FEED = "https://feeds.finance.yahoo.com/rss/2.0/headline?s={symbol}&region=US&lang=en-US"
 CRYPTO_FEED = "https://cryptopanic.com/api/v1/static/feeds/news.xml"
@@ -21,7 +25,9 @@ def fetch_news(symbol: str, source: str = "yahoo") -> list[dict]:
 
     url = YAHOO_FEED.format(symbol=symbol.upper())
     try:
+        t0 = time.monotonic()
         resp = requests.get(url, timeout=10)
+        elapsed = time.monotonic() - t0
         resp.raise_for_status()
         root = ElementTree.fromstring(resp.content)
         items = []
@@ -43,6 +49,7 @@ def fetch_news(symbol: str, source: str = "yahoo") -> list[dict]:
                 "url": link,
                 "published_at": pub_date.isoformat() if pub_date else None,
             })
+        log.http("Yahoo RSS %s  %d items  %.1fs", symbol, len(items), elapsed)
         return items
     except Exception:
         return []
@@ -50,7 +57,9 @@ def fetch_news(symbol: str, source: str = "yahoo") -> list[dict]:
 
 def _fetch_cryptopanic() -> list[dict]:
     try:
+        t0 = time.monotonic()
         resp = requests.get(CRYPTO_FEED, timeout=10)
+        elapsed = time.monotonic() - t0
         resp.raise_for_status()
         root = ElementTree.fromstring(resp.content)
         items = []
@@ -72,6 +81,7 @@ def _fetch_cryptopanic() -> list[dict]:
                 "url": link,
                 "published_at": pub_date.isoformat() if pub_date else None,
             })
+        log.http("CryptoPanic  %d items  %.1fs", len(items), elapsed)
         return items
     except Exception:
         return []

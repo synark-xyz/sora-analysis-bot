@@ -5,7 +5,12 @@ No API key required. Rate limit: ~30 req/min on free tier.
 Returns same dict format as us_feed.py for pipeline compatibility.
 """
 
+import time
 import requests
+
+from log import get_logger
+
+log = get_logger("data.crypto_feed", "DATA")
 
 COINGECKO_IDS = {
     "BTC": "bitcoin",
@@ -28,9 +33,12 @@ def fetch_bars(symbol: str, days: int = 90) -> list[dict]:
 
     try:
         url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/ohlc"
+        t0 = time.monotonic()
         resp = requests.get(url, params={"vs_currency": "usd", "days": days}, timeout=15)
+        elapsed = time.monotonic() - t0
         resp.raise_for_status()
         data = resp.json()
+        log.http("CoinGecko %s  %d bars  %.1fs", symbol, len(data), elapsed)
         return [
             {
                 "time": int(c[0] // 1000),

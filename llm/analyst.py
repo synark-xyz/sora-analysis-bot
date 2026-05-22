@@ -1,12 +1,9 @@
-import logging
 from typing import Optional
 
 from llm.client import LLMClient, FAST_MODEL, ANALYSIS_MODEL
 
-logger = logging.getLogger(__name__)
-
-BULL_MODEL = "meta-llama/llama-3.2-3b-instruct:free"
-BEAR_MODEL = "meta-llama/llama-3.2-3b-instruct:free"
+BULL_MODEL = "openrouter/free"
+BEAR_MODEL = "openrouter/free"
 
 BULL_SYSTEM_PROMPT = """You are BullAgent, an expert bullish analyst. Build the strongest possible bullish case. Be specific with price levels and catalysts. Never fabricate data — use only what is provided. Return ONLY valid JSON, no other text."""
 
@@ -25,7 +22,7 @@ You MUST return valid JSON with these exact keys:
   "rr_ratio": 0.0,
   "timeframe": "Swing (5-12 days)",
   "summary": "1-2 sentence rationale",
-  "rules_check": "all passed or violations",
+  "rules_check": "all passed",
   "confidence_breakdown": {
     "trend_strength": 0-100,
     "signal_alignment": 0-100,
@@ -89,7 +86,7 @@ Fundamentals: {fundamentals}"""
         },
     ]
     bull_result = await bull_llm.complete_json(
-        bull_messages, temperature=0.3, use_cache=True
+        bull_messages, temperature=0.3, max_tokens=2048, use_cache=True
     )
 
     bear_messages = [
@@ -100,7 +97,7 @@ Fundamentals: {fundamentals}"""
         },
     ]
     bear_result = await bear_llm.complete_json(
-        bear_messages, temperature=0.3, use_cache=True
+        bear_messages, temperature=0.3, max_tokens=2048, use_cache=True
     )
 
     synthesis_messages = [
@@ -111,7 +108,7 @@ Fundamentals: {fundamentals}"""
         },
     ]
     synthesis = await llm.complete_json(
-        synthesis_messages, temperature=0.2, use_cache=True
+        synthesis_messages, temperature=0.2, max_tokens=2048, use_cache=True
     )
     synthesis["bull_thesis"] = bull_result.get("bull_thesis", "")
     synthesis["bear_thesis"] = bear_result.get("bear_thesis", "")

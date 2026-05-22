@@ -1,3 +1,9 @@
+def _html(text):
+    if not isinstance(text, str):
+        text = str(text)
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
 def format_confidence_bar(score, width=12):
     if score < 0:
         score = 0
@@ -31,18 +37,18 @@ def _dollar(value):
 
 
 def format_signal_report(signal):
-    symbol = signal.get("symbol", "?")
-    verdict = signal.get("verdict", "HOLD")
+    symbol = _html(signal.get("symbol", "?"))
+    verdict = _html(signal.get("verdict", "HOLD"))
     confidence = signal.get("confidence", 0)
     label = _confidence_label(confidence)
-    strategy = signal.get("strategy", "—")
-    regime = signal.get("regime", "—")
+    strategy = _html(signal.get("strategy", "—"))
+    regime = _html(signal.get("regime", "—"))
     entry_low = signal.get("entry_low")
     entry_high = signal.get("entry_high")
     exit_target = signal.get("exit_target")
     stop_loss = signal.get("stop_loss")
     rr = signal.get("rr_ratio")
-    reason = signal.get("reason", "")
+    reason = _html(signal.get("reason", ""))
     timeframe = signal.get("timeframe", "Swing (5\u201312 days)")
     is_full = signal.get("llm_report", False)
 
@@ -65,19 +71,36 @@ def format_signal_report(signal):
 
     if entry_low is not None and entry_high is not None:
         lines.append(f"{'📍'} ENTRY ZONE    {_dollar(entry_low)} \u2013 {_dollar(entry_high)}")
-        if signal.get("entry_anchor"):
-            lines.append(f"   Anchor: {signal['entry_anchor']}")
+        anchor = signal.get("entry_anchor")
+        if anchor:
+            lines.append(f"   Anchor: {_html(anchor)}")
     if exit_target is not None:
         lines.append(f"{'🎯'} EXIT TARGET   {_dollar(exit_target)}  ({_pct_str(entry_return)})")
-        if signal.get("exit_anchor"):
-            lines.append(f"   Anchor: {signal['exit_anchor']}")
+        anchor = signal.get("exit_anchor")
+        if anchor:
+            lines.append(f"   Anchor: {_html(anchor)}")
     if stop_loss is not None:
         lines.append(f"{'🛑'} STOP LOSS     {_dollar(stop_loss)}  ({_pct_str(stop_return)})")
-        if signal.get("stop_anchor"):
-            lines.append(f"   Anchor: {signal['stop_anchor']}")
+        anchor = signal.get("stop_anchor")
+        if anchor:
+            lines.append(f"   Anchor: {_html(anchor)}")
     if rr is not None:
         lines.append(f"{'⚖️'}  RISK / REWARD   1 : {rr:.1f}")
-    lines.append(f"{'⏱'}  Timeframe        {timeframe}")
+    lines.append(f"{'⏱'}  Timeframe        {_html(timeframe)}")
+
+    tc = signal.get("tech_conditions")
+    if tc:
+        lines.append("")
+        lines.append("TECHNICAL CONDITIONS")
+        tc_map = {"rsi": "RSI", "stoch": "Stoch", "williams_r": "W%R", "bb": "BBands"}
+        for key, label in tc_map.items():
+            val = tc.get(key, "neutral")
+            emoji = {"severely-oversold": "🔴", "oversold": "🟠", "overbought": "🟠", "severely-overbought": "🔴", "neutral": "🟢"}.get(val, "⚪")
+            lines.append(f"  {label:<8} {emoji} {val}")
+        overall = tc.get("overall", "")
+        if overall and overall != "neutral":
+            emoji = {"extreme": "🔥", "oversold": "📉", "overbought": "📈", "mixed": "⚡"}.get(overall, "⚪")
+            lines.append(f"  {'Overall':<8} {emoji} {overall}")
 
     conf_breakdown = signal.get("confidence_breakdown") or signal.get("breakdown")
     if conf_breakdown:
@@ -97,10 +120,19 @@ def format_signal_report(signal):
                 elif isinstance(dim, (list, tuple)):
                     lines.append(f"  {dim[0]:<20} {format_confidence_bar(dim[1])}  {dim[1]:.0f}%")
 
-    rules = signal.get("rules_check") or signal.get("rules")
-    if rules:
+    gate_scorecard = signal.get("gate_scorecard")
+    gate_passed = signal.get("gate_passed")
+    if gate_scorecard:
         lines.append("")
-        lines.append(f"Your rules: {rules}")
+        header = "SIGNAL GATE  \u2713 PASSED" if gate_passed else "SIGNAL GATE  \u2717 BLOCKED"
+        lines.append(f"<b>{header}</b>")
+        for line in gate_scorecard.splitlines():
+            lines.append(f"  {_html(line)}")
+
+    rules = signal.get("rules_check") or signal.get("rules")
+    if rules and rules not in ("all passed", "all passed or violations"):
+        lines.append("")
+        lines.append(f"Your rules: {_html(rules)}")
 
     if not is_full and "long" in str(timeframe).lower():
         try:
@@ -112,14 +144,14 @@ def format_signal_report(signal):
                 insider = f.get("insider_transactions", "")
                 parts = []
                 if rev:
-                    parts.append(f"Rev growth {rev}")
+                    parts.append(f"Rev growth {_html(str(rev))}")
                 if pe:
-                    parts.append(f"P/E {pe}")
+                    parts.append(f"P/E {_html(str(pe))}")
                 if insider:
-                    parts.append(f"Insider: {insider}")
+                    parts.append(f"Insider: {_html(str(insider))}")
                 if parts:
                     lines.append("")
-                    lines.append("Fundamentals: " + " · ".join(parts))
+                    lines.append("Fundamentals: " + " \u00b7 ".join(parts))
         except Exception:
             pass
 
@@ -130,16 +162,18 @@ def format_signal_report(signal):
         risks = signal.get("key_risks", [])
         if bull:
             lines.append("")
-            lines.append(f"{'🤖'} <b>Bull Case:</b> {bull[:300]}")
+            lines.append(f"{'🤖'} <b>Bull Case:</b> {_html(bull[:300])}")
         if bear:
             lines.append("")
-            lines.append(f"{'🐻'} <b>Bear Case:</b> {bear[:300]}")
+            lines.append(f"{'🐻'} <b>Bear Case:</b> {_html(bear[:300])}")
         if catalysts:
+            items = [_html(str(c)[:80]) for c in catalysts[:3]]
             lines.append("")
-            lines.append(f"{'🔥'} Catalysts: {' | '.join(str(c)[:80] for c in catalysts[:3])}")
+            lines.append(f"{'🔥'} Catalysts: {' | '.join(items)}")
         if risks:
+            items = [_html(str(r)[:80]) for r in risks[:3]]
             lines.append("")
-            lines.append(f"{'⚠️'} Risks: {' | '.join(str(r)[:80] for r in risks[:3])}")
+            lines.append(f"{'⚠️'} Risks: {' | '.join(items)}")
 
     if reason:
         lines.append("")
