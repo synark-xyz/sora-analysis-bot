@@ -5,12 +5,12 @@ from llm.client import LLMClient, FAST_MODEL, ANALYSIS_MODEL
 
 logger = logging.getLogger(__name__)
 
-BULL_MODEL = "meta-llama/llama-3.1-8b-instruct:free"
-BEAR_MODEL = "meta-llama/llama-3.1-8b-instruct:free"
+BULL_MODEL = "meta-llama/llama-3.2-3b-instruct:free"
+BEAR_MODEL = "meta-llama/llama-3.2-3b-instruct:free"
 
-BULL_SYSTEM_PROMPT = """You are BullAgent, an expert bullish analyst. Your job is to build the strongest possible bullish case for the given symbol using all available data. Be specific with price levels and catalysts. Never fabricate data — use only what is provided."""
+BULL_SYSTEM_PROMPT = """You are BullAgent, an expert bullish analyst. Build the strongest possible bullish case. Be specific with price levels and catalysts. Never fabricate data — use only what is provided. Return ONLY valid JSON, no other text."""
 
-BEAR_SYSTEM_PROMPT = """You are BearAgent, an expert risk analyst. Your job is to stress-test the bull thesis and build the strongest bearish counter-case. Identify hidden risks, overoptimistic assumptions, and technical weaknesses. Be specific with price levels."""
+BEAR_SYSTEM_PROMPT = """You are BearAgent, an expert risk analyst. Stress-test the bull thesis and build the strongest bearish counter-case. Identify hidden risks, overoptimistic assumptions, and technical weaknesses. Be specific with price levels. Return ONLY valid JSON, no other text."""
 
 ANALYST_SYSTEM_PROMPT = """You are AnalystAgent, the final decision-maker. Synthesize the bull and bear arguments against the user's own trading strategy (from their wiki). Return a structured verdict.
 
@@ -36,7 +36,7 @@ You MUST return valid JSON with these exact keys:
   }
 }
 
-Do NOT include markdown fences around the JSON."""
+Only output the raw JSON object — no markdown fences, no explanation, no extra text."""
 
 
 async def analyze_quick(

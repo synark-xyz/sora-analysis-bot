@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 DEFAULT_MODEL = "google/gemini-2.5-flash"
 FAST_MODEL = "deepseek/deepseek-v4-flash:free"
-ANALYSIS_MODEL = "deepseek/deepseek-chat-v3-0324:free"
+ANALYSIS_MODEL = "deepseek/deepseek-v4-flash:free"
 CACHE_TTL_HOURS = 5
 MAX_RETRIES = 3
 RETRY_BASE_WAIT = 2.0
@@ -151,12 +151,26 @@ class LLMClient:
             use_cache=use_cache,
         )
         text = raw.strip()
-        if text.startswith("```"):
-            lines = text.split("\n")
-            text = "\n".join(
-                lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
-            )
-            text = text.strip()
+
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        if "```" in text:
+            parts = text.split("```")
+            for part in parts:
+                part = part.strip()
+                if part.startswith("{"):
+                    text = part
+                    break
+
+        if not text.startswith("{"):
+            start = text.find("{")
+            end = text.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                text = text[start:end + 1]
+
         try:
             return json.loads(text)
         except json.JSONDecodeError as e:
