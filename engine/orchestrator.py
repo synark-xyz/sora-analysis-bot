@@ -30,7 +30,7 @@ _confidence_engine = ConfidenceEngine()
 _strategy_selector = StrategySelector()
 
 
-def run_pipeline(symbol: str, market: str = 'us') -> dict | None:
+def run_pipeline(symbol: str, market: str = 'us', timeframe: str = 'swing') -> dict | None:
     try:
         bars = _fetch_bars(symbol, market)
         if not bars or len(bars) < 20:
@@ -82,6 +82,8 @@ def run_pipeline(symbol: str, market: str = 'us') -> dict | None:
             stop_loss=stop_loss,
             take_profit=take_profit,
             confidence_breakdown=confidence.breakdown,
+            atr=indicators.get("atr_14"),
+            timeframe=timeframe,
         )
 
     except Exception as e:
@@ -263,7 +265,16 @@ def _build_result(
     stop_loss: float | None = None,
     take_profit: float | None = None,
     confidence_breakdown: dict | None = None,
+    atr: float | None = None,
+    timeframe: str = "swing",
 ) -> dict:
+    zone_half = atr * 0.5 if atr else 0
+    entry_low = (entry_price - zone_half) if entry_price else None
+    entry_high = (entry_price + zone_half) if entry_price else None
+
+    anchor_ema = "VWAP + SMA50" if timeframe == "swing" else "SMA200 + weekly support"
+    stop_mult = "1.5" if timeframe == "swing" else "2.5"
+
     result = {
         "symbol": symbol,
         "verdict": verdict,
@@ -271,9 +282,13 @@ def _build_result(
         "strategy": strategy,
         "reason": reason,
         "regime": regime,
-        "entry_price": entry_price,
-        "stop_loss": stop_loss,
-        "take_profit": take_profit,
+        "entry_low": round(entry_low, 2) if entry_low else None,
+        "entry_high": round(entry_high, 2) if entry_high else None,
+        "exit_target": round(take_profit, 2) if take_profit else None,
+        "stop_loss": round(stop_loss, 2) if stop_loss else None,
+        "entry_anchor": anchor_ema,
+        "exit_anchor": "Resistance cluster + Fib extension",
+        "stop_anchor": f"{stop_mult}× ATR below entry",
     }
     if confidence_breakdown:
         result["confidence_breakdown"] = confidence_breakdown
@@ -485,6 +500,69 @@ def _calc_historical_volatility(prices: list[float], window: int = 20) -> float:
     return sum(vols) / len(vols) if vols else 0.15
 
 
+_CRYPTO_SET = {"BTC", "ETH", "SOL", "BNB", "AVAX", "LINK", "DOT", "MATIC", "ADA", "XRP", "DOGE"}
+
+
+def _detect_market(symbol: str) -> str:
+    return "crypto" if symbol in _CRYPTO_SET else "us"
+
+
+def _empty_result(symbol: str, market: str) -> dict:
+    return {
+        "symbol": symbol,
+        "market": market,
+        "verdict": "HOLD",
+        "confidence": 0,
+        "reason": "Insufficient data or no signal",
+        "strategy": "N/A",
+        "regime": "N/A",
+    }
+
+
+async def _run_full_analysis(symbol: str, market: str) -> dict:
+    try:
+        from llm.analyst import analyze_full
+
+        bars = _fetch_bars(symbol, market)
+        if not bars or len(bars) < 20:
+            return {}
+        indicators = _compute_indicators(symbol, bars)
+        regime = detect_regime()
+
+        news = ""
+        try:
+            from analysis.news import fetch_news
+            news_items = fetch_news(symbol)
+            news = "; ".join(n.get("title", "") for n in news_items[:5])
+        except Exception:
+            pass
+
+        fundamentals = ""
+        try:
+            from analysis.fundamental import get_fundamentals
+            fundamentals = str(get_fundamentals(symbol))
+        except Exception:
+            pass
+
+        wiki_context = ""
+        try:
+            from memory.wiki import query_wiki
+            wiki_context = await query_wiki(symbol)
+        except Exception:
+            pass
+
+        return await analyze_full(
+            symbol=symbol,
+            indicators=indicators,
+            regime={"regime": regime.regime, "adx": indicators.get("adx", 0)},
+            news=news,
+            fundamentals=fundamentals,
+            wiki_context=wiki_context,
+        )
+    except ImportError:
+        return {}
+
+
 async def run_analysis(
     symbol: str,
     full: bool = False,
@@ -492,35 +570,32 @@ async def run_analysis(
     long_term: bool = False,
 ) -> dict:
     import asyncio
-    market = "crypto" if symbol in {
-        "BTC", "ETH", "SOL", "BNB", "AVAX", "LINK", "DOT", "MATIC", "ADA", "XRP", "DOGE"
-    } else "us"
-    result = await asyncio.to_thread(run_pipeline, symbol, market)
+    market = _detect_market(symbol)
+    timeframe = "long" if long_term else "swing"
+
+    result = await asyncio.to_thread(run_pipeline, symbol, market, timeframe)
     if result is None:
-        return {
-            "symbol": symbol,
-            "market": market,
-            "verdict": "HOLD",
-            "confidence": 0,
-            "reason": "Insufficient data or no signal",
-            "strategy": "N/A",
-            "regime": "N/A",
-        }
+        return _empty_result(symbol, market)
+
     result["market"] = market
-    if long_term:
-        result["timeframe"] = "long"
-    elif swing:
-        result["timeframe"] = "swing"
-    else:
-        result["timeframe"] = "short"
+    result["timeframe"] = "Position (weeks–months)" if long_term else "Swing (5–12 days)"
+
     if full:
-        result["full_report"] = True
+        llm_result = await _run_full_analysis(symbol, market)
+        if llm_result:
+            result["llm_report"] = True
+            bull = llm_result.pop("bull_thesis", "")
+            bear = llm_result.pop("bear_thesis", "")
+            result.update(llm_result)
+            if bull:
+                result["bull_thesis"] = bull
+            if bear:
+                result["bear_thesis"] = bear
+            result["timeframe"] = "Full (Multi-Agent)"
+
     return result
 
 
 async def get_bars(symbol: str) -> list[dict]:
     import asyncio
-    market = "crypto" if symbol in {
-        "BTC", "ETH", "SOL", "BNB", "AVAX", "LINK", "DOT", "MATIC", "ADA", "XRP", "DOGE"
-    } else "us"
-    return await asyncio.to_thread(_fetch_bars, symbol, market)
+    return await asyncio.to_thread(_fetch_bars, symbol, _detect_market(symbol))

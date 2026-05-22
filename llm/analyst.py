@@ -110,6 +110,11 @@ Fundamentals: {fundamentals}"""
             "content": f"Synthesize the bull vs bear debate for {symbol}.\n\nIndicators: {indicators}\nRegime: {regime}\nNews: {news}\nFundamentals: {fundamentals}\n\nBull case: {bull_result.get('bull_thesis', '')}\nBull confidence: {bull_result.get('bull_confidence', 'N/A')}\nCatalysts: {bull_result.get('key_catalysts', [])}\n\nBear case: {bear_result.get('bear_thesis', '')}\nBear confidence: {bear_result.get('bear_confidence', 'N/A')}\nRisks: {bear_result.get('key_risks', [])}\n\nUser wiki context:\n{wiki_context}",
         },
     ]
-    return await llm.complete_json(
+    synthesis = await llm.complete_json(
         synthesis_messages, temperature=0.2, use_cache=True
     )
+    synthesis["bull_thesis"] = bull_result.get("bull_thesis", "")
+    synthesis["bear_thesis"] = bear_result.get("bear_thesis", "")
+    synthesis["key_catalysts"] = bull_result.get("key_catalysts", [])
+    synthesis["key_risks"] = bear_result.get("key_risks", [])
+    return synthesis

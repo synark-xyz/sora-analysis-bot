@@ -223,22 +223,6 @@ class TelegramHandler:
         report = format_signal_report(signal)
         await self.send_message(report, chat_id=chat_id)
 
-        try:
-            from engine.orchestrator import get_bars
-
-            bars = await get_bars(symbol)
-        except (ImportError, Exception):
-            bars = self._mock_bars()
-
-        if bars:
-            try:
-                from telegram.chart import generate_chart
-
-                chart_bytes = generate_chart(bars, signal)
-                await self.send_photo(chart_bytes, caption=f"{symbol} chart", chat_id=chat_id)
-            except ImportError:
-                pass
-
         if signal.get("verdict") != "HOLD":
             try:
                 saved_id = save_signal(signal)

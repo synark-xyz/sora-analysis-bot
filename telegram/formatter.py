@@ -43,6 +43,10 @@ def format_signal_report(signal):
     stop_loss = signal.get("stop_loss")
     rr = signal.get("rr_ratio")
     reason = signal.get("reason", "")
+    timeframe = signal.get("timeframe", "Swing (5\u201312 days)")
+    is_full = signal.get("llm_report", False)
+
+    tf_tag = "LONG-TERM" if "weeks" in str(timeframe) else ("FULL" if is_full else "SWING")
 
     entry_return = None
     if exit_target and entry_low:
@@ -52,7 +56,7 @@ def format_signal_report(signal):
         stop_return = ((stop_loss - entry_low) / entry_low) * 100
 
     lines = [
-        f"<b>{'📊'} {symbol}  ·  {verdict} SIGNAL</b>",
+        f"<b>{'📊'} {symbol}  ·  {verdict} SIGNAL  [{tf_tag}]</b>",
         f"Confidence  {confidence:.0f} / 100  [{label}]",
         f"Strategy    {strategy}",
         f"Regime      {regime}",
@@ -73,27 +77,69 @@ def format_signal_report(signal):
             lines.append(f"   Anchor: {signal['stop_anchor']}")
     if rr is not None:
         lines.append(f"{'⚖️'}  RISK / REWARD   1 : {rr:.1f}")
-    if signal.get("timeframe"):
-        lines.append(f"{'⏱'}  Timeframe        {signal['timeframe']}")
-    else:
-        lines.append(f"{'⏱'}  Timeframe        Swing (5\u201312 days)")
+    lines.append(f"{'⏱'}  Timeframe        {timeframe}")
 
     conf_breakdown = signal.get("confidence_breakdown") or signal.get("breakdown")
     if conf_breakdown:
         lines.append("")
         lines.append("CONFIDENCE BREAKDOWN")
-        for dim in conf_breakdown:
-            if isinstance(dim, dict):
-                name = dim.get("name", "?")
-                score = dim.get("score", 0)
+        if isinstance(conf_breakdown, dict):
+            for key, value in conf_breakdown.items():
+                score = value if isinstance(value, (int, float)) else value.get("score", 0)
+                name = key.replace("_", " ").title()
                 lines.append(f"  {name:<20} {format_confidence_bar(score)}  {score:.0f}%")
-            elif isinstance(dim, (list, tuple)):
-                lines.append(f"  {dim[0]:<20} {format_confidence_bar(dim[1])}  {dim[1]:.0f}%")
+        elif isinstance(conf_breakdown, list):
+            for dim in conf_breakdown:
+                if isinstance(dim, dict):
+                    name = dim.get("name", "?")
+                    score = dim.get("score", 0)
+                    lines.append(f"  {name:<20} {format_confidence_bar(score)}  {score:.0f}%")
+                elif isinstance(dim, (list, tuple)):
+                    lines.append(f"  {dim[0]:<20} {format_confidence_bar(dim[1])}  {dim[1]:.0f}%")
 
     rules = signal.get("rules_check") or signal.get("rules")
     if rules:
         lines.append("")
         lines.append(f"Your rules: {rules}")
+
+    if not is_full and "long" in str(timeframe).lower():
+        try:
+            from analysis.fundamental import get_fundamentals
+            f = get_fundamentals(symbol)
+            if f:
+                pe = f.get("pe_ratio", f.get("P/E", ""))
+                rev = f.get("revenue_growth", f.get("revGrowth", ""))
+                insider = f.get("insider_transactions", "")
+                parts = []
+                if rev:
+                    parts.append(f"Rev growth {rev}")
+                if pe:
+                    parts.append(f"P/E {pe}")
+                if insider:
+                    parts.append(f"Insider: {insider}")
+                if parts:
+                    lines.append("")
+                    lines.append("Fundamentals: " + " · ".join(parts))
+        except Exception:
+            pass
+
+    if is_full:
+        bull = signal.get("bull_thesis", "")
+        bear = signal.get("bear_thesis", "")
+        catalysts = signal.get("key_catalysts", [])
+        risks = signal.get("key_risks", [])
+        if bull:
+            lines.append("")
+            lines.append(f"{'🤖'} <b>Bull Case:</b> {bull[:300]}")
+        if bear:
+            lines.append("")
+            lines.append(f"{'🐻'} <b>Bear Case:</b> {bear[:300]}")
+        if catalysts:
+            lines.append("")
+            lines.append(f"{'🔥'} Catalysts: {' | '.join(str(c)[:80] for c in catalysts[:3])}")
+        if risks:
+            lines.append("")
+            lines.append(f"{'⚠️'} Risks: {' | '.join(str(r)[:80] for r in risks[:3])}")
 
     if reason:
         lines.append("")
