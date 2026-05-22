@@ -15,6 +15,17 @@ except ImportError:
     httpx = None
 
 from log import get_logger
+from llm.client import LLMClient
+
+try:
+    from memory.wiki import query_wiki
+except ImportError:
+    query_wiki = lambda symbol=None: ""
+
+try:
+    from engine.orchestrator import run_pipeline
+except ImportError:
+    run_pipeline = None
 
 log = get_logger("telegram.handler", "TELEGRAM")
 
@@ -54,6 +65,8 @@ except ImportError:
     save_lesson = lambda lt, s, p, ci=0: 0
     get_lessons = lambda l=20: []
 
+MAX_CHAT_HISTORY = 10
+
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
@@ -68,6 +81,8 @@ class TelegramHandler:
         self.running = True
         self._poll_timeout = 30
         self.http_client = None
+        self._llm = LLMClient()
+        self._chat_history: list[dict] = []
 
     async def _ensure_client(self):
         if self.http_client is None and httpx is not None:
@@ -170,6 +185,8 @@ class TelegramHandler:
                 cmd = parts[0].split("@")[0].lower()
                 args = parts[1] if len(parts) > 1 else ""
                 await self._route_command(cmd, args, chat_id)
+            else:
+                asyncio.create_task(self._handle_chat(text, chat_id))
         except Exception as e:
             log.error("unhandled error in update %s: %s", update.get("update_id"), e)
 
@@ -226,17 +243,20 @@ class TelegramHandler:
         is_full = "-full" in flags
         is_swing = "-swing" in flags
         is_long = "-long" in flags
+        is_moomoo = "-mm" in flags
 
-        await self.send_message(f"Analyzing {symbol}...", chat_id=chat_id)
+        label = "Moomoo" if is_moomoo else "Full" if is_full else "Swing" if is_swing else "Quick"
+        await self.send_message(f"Analyzing {symbol} ({label})...", chat_id=chat_id)
 
         try:
             from engine.orchestrator import run_analysis
 
             signal = await run_analysis(
                 symbol=symbol,
-                full=is_full,
+                full=is_full and not is_moomoo,
                 swing=is_swing,
                 long_term=is_long,
+                moomoo=is_moomoo,
             )
         except ImportError:
             signal = self._mock_signal(symbol)
@@ -577,7 +597,127 @@ class TelegramHandler:
                 chat_id=chat_id,
             )
 
+    _CHAT_TOOLS = [
+        {
+            "type": "function",
+            "function": {
+                "name": "analyze_symbol",
+                "description": "Run technical analysis pipeline on a stock or crypto symbol. Use when user asks about a specific ticker, wants signals, entry/exit zones, or a market read.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {"type": "string", "description": "Ticker symbol, e.g. QCOM, BTC"},
+                        "market": {"type": "string", "enum": ["us", "crypto"], "description": "us for stocks, crypto for crypto"},
+                        "timeframe": {"type": "string", "enum": ["swing", "long"], "description": "swing (days-weeks) or long (weeks-months)"},
+                    },
+                    "required": ["symbol"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_recent_signals",
+                "description": "Fetch recent signals from the database. Use to answer questions like 'what signals did you generate lately' or 'what have you been watching'.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "days": {"type": "integer", "description": "How many days back to look", "default": 7},
+                    },
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_watchlist",
+                "description": "Return the user's current watchlist symbols.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_lessons",
+                "description": "Retrieve stored lessons, notes, and theses from memory.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {"type": "integer", "description": "Max lessons to return", "default": 10},
+                    },
+                },
+            },
+        },
+    ]
+
+    async def _exec_tool(self, name: str, args: dict) -> str:
+        if name == "analyze_symbol":
+            symbol = args.get("symbol", "").upper()
+            market = args.get("market", self._detect_market(symbol))
+            timeframe = args.get("timeframe", "swing")
+            if not run_pipeline:
+                return f"Analysis engine unavailable."
+            result = await asyncio.to_thread(run_pipeline, symbol, market, timeframe)
+            if not result:
+                return f"No signal generated for {symbol} — insufficient data or filtered out."
+            from telegram.formatter import format_signal_report
+            return format_signal_report(result)
+        elif name == "get_recent_signals":
+            days = args.get("days", 7)
+            sigs = await asyncio.to_thread(get_signals, days, 10)
+            return str(sigs) if sigs else "No signals in DB for that period."
+        elif name == "get_watchlist":
+            wl = await asyncio.to_thread(get_watchlist)
+            return str(wl) if wl else "Watchlist is empty."
+        elif name == "get_lessons":
+            limit = args.get("limit", 10)
+            les = await asyncio.to_thread(get_lessons, limit)
+            return str(les) if les else "No lessons stored."
+        return f"Unknown tool: {name}"
+
+    async def _handle_chat(self, text: str, chat_id: int):
+        await self.send_action("typing", chat_id=chat_id)
+        profile = await asyncio.to_thread(get_profile)
+        wiki = await asyncio.to_thread(query_wiki)
+        system = (
+            "You are Sora, a personal AI trading assistant. "
+            "You have tools to analyze symbols and query memory. "
+            "Use them when the user asks about specific tickers or wants data.\n\n"
+            f"User profile: {profile}\n"
+            f"Wiki context: {wiki}\n\n"
+            "Be concise. Focus on trading, markets, signals, and strategy."
+        )
+        self._chat_history.append({"role": "user", "content": text})
+        messages = [{"role": "system", "content": system}] + self._chat_history[-(MAX_CHAT_HISTORY * 2):]
+
+        # Agentic loop — max 3 tool rounds
+        for _ in range(3):
+            content, tool_calls = await self._llm.complete_with_tools(
+                messages, self._CHAT_TOOLS, temperature=0.5, max_tokens=512
+            )
+            if tool_calls is None:
+                break
+            # Execute all tool calls in this round
+            messages.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
+            await self.send_action("typing", chat_id=chat_id)
+            for tc in tool_calls:
+                fn = tc["function"]
+                args = json.loads(fn.get("arguments", "{}"))
+                result = await self._exec_tool(fn["name"], args)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": result,
+                })
+        else:
+            content = "Reached tool call limit. Try a more specific question."
+
+        reply = content or "No response from model."
+        self._chat_history.append({"role": "assistant", "content": reply})
+        await self.send_message(reply, chat_id=chat_id)
+
     async def _handle_clear(self, args, chat_id):
+        self._chat_history = []
         if self.http_client:
             url = f"{self.base_url}/getUpdates"
             await self.http_client.get(url, params={"offset": -1})

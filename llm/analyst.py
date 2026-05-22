@@ -1,6 +1,7 @@
 from typing import Optional
 
 from llm.client import LLMClient, FAST_MODEL, ANALYSIS_MODEL
+from analysis.moomoo import build_moomoo_prompt
 
 BULL_MODEL = "openrouter/free"
 BEAR_MODEL = "openrouter/free"
@@ -34,6 +35,47 @@ You MUST return valid JSON with these exact keys:
 }
 
 Only output the raw JSON object — no markdown fences, no explanation, no extra text."""
+
+MOOMOO_SYSTEM_PROMPT = """You are MoomooAnalystAgent. Follow the Moomoo 5-Step Analytical Framework below to produce a comprehensive analysis.
+
+Return ONLY valid JSON with no markdown fences, no explanation, no extra text.
+
+Expected JSON schema:
+{
+  "verdict": "BUY|SELL|HOLD",
+  "confidence": 0-100,
+  "entry_low": 0.0,
+  "entry_high": 0.0,
+  "exit_target": 0.0,
+  "stop_loss": 0.0,
+  "rr_ratio": 0.0,
+  "timeframe": "Swing (5-12 days)",
+  "summary": "1-2 sentence rationale",
+  "executive_summary": "1-2 sentence integrated verdict",
+  "valuation_assessment": {
+    "verdict": "undervalued|fair|overvalued",
+    "key_metrics": "summary of P/E, P/B, PEG vs industry",
+    "fair_value_estimate": "estimated fair value range"
+  },
+  "entry_strategy": {
+    "tactical_zone": {"price": 0.0, "reason": ""},
+    "value_zone": {"price": 0.0, "reason": ""},
+    "scale_in_plan": "how to scale in across zones"
+  },
+  "risk_management": {
+    "stop_loss_type": "technical|percentage|fundamental",
+    "position_sizing": "guidance on position size",
+    "margin_of_safety_pct": 0.0
+  },
+  "monitoring_catalysts": ["event 1", "event 2"],
+  "moomoo_framework_breakdown": {
+    "step1_objective": "",
+    "step3_fundamental_verdict": "",
+    "step3_valuation_verdict": "",
+    "step3_technical_verdict": "",
+    "step4_synthesis": ""
+  }
+}"""
 
 
 async def analyze_quick(
@@ -115,3 +157,38 @@ Fundamentals: {fundamentals}"""
     synthesis["key_catalysts"] = bull_result.get("key_catalysts", [])
     synthesis["key_risks"] = bear_result.get("key_risks", [])
     return synthesis
+
+
+async def analyze_moomoo(
+    symbol: str,
+    indicators: dict,
+    regime: dict,
+    news: str,
+    fundamentals: str,
+    valuation: str,
+    wiki_context: str = "",
+    llm: Optional[LLMClient] = None,
+) -> dict:
+    llm = llm or LLMClient(model=ANALYSIS_MODEL)
+    full_prompt = build_moomoo_prompt(
+        symbol=symbol,
+        indicators=indicators,
+        regime=regime,
+        news=news,
+        fundamentals=fundamentals,
+        valuation=valuation,
+        wiki_context=wiki_context,
+    )
+    messages = [
+        {"role": "system", "content": MOOMOO_SYSTEM_PROMPT},
+        {"role": "user", "content": full_prompt},
+    ]
+    result = await llm.complete_json(messages, temperature=0.2, max_tokens=4096, use_cache=True)
+    result["moomoo_report"] = True
+    for required in ("summary", "executive_summary", "entry_strategy", "risk_management"):
+        result.setdefault(required, "")
+    for required in ("entry_low", "entry_high", "exit_target", "stop_loss", "rr_ratio", "confidence"):
+        result.setdefault(required, 0)
+    result.setdefault("verdict", "HOLD")
+    result.setdefault("timeframe", "Swing (5-12 days)")
+    return result

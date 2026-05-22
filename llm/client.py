@@ -166,6 +166,72 @@ class LLMClient:
             f"OpenRouter failed after {MAX_RETRIES} attempts: {last_error}"
         )
 
+    async def complete_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        model: Optional[str] = None,
+        temperature: float = 0.3,
+        max_tokens: int = 1024,
+    ) -> tuple[Optional[str], Optional[list]]:
+        """Returns (content, None) for text reply or (None, tool_calls) for tool invocations."""
+        model = model or self.model
+        wait = await _bucket.acquire()
+        if wait > 0:
+            await asyncio.sleep(wait)
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "tools": tools,
+            "tool_choice": "auto",
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+
+        last_error: Optional[Exception] = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                async with httpx.AsyncClient(timeout=60) as client:
+                    resp = await client.post(
+                        OPENROUTER_BASE + "/chat/completions",
+                        headers=self._headers(),
+                        json=payload,
+                    )
+
+                if resp.status_code == 429:
+                    retry_after = resp.headers.get("Retry-After")
+                    wait = float(retry_after) if retry_after else RETRY_BASE_WAIT * (2**attempt)
+                    last_error = RuntimeError(f"rate limited (429)")
+                    await asyncio.sleep(wait)
+                    continue
+
+                if resp.status_code == 402:
+                    raise RuntimeError("OpenRouter: insufficient credits (402)")
+
+                resp.raise_for_status()
+                data = resp.json()
+                choice = data["choices"][0]
+                msg = choice["message"]
+
+                if choice.get("finish_reason") == "tool_calls" or msg.get("tool_calls"):
+                    return None, msg["tool_calls"]
+
+                content = msg.get("content") or ""
+                if not content:
+                    last_error = RuntimeError("empty content from model")
+                    continue
+
+                return content, None
+
+            except (httpx.RequestError, httpx.HTTPStatusError) as e:
+                last_error = e
+                wait = RETRY_BASE_WAIT * (2**attempt)
+                if attempt < MAX_RETRIES - 1:
+                    await asyncio.sleep(wait)
+
+        raise RuntimeError(f"OpenRouter failed after {MAX_RETRIES} attempts: {last_error}")
+
     async def complete_json(
         self,
         messages: list[dict],

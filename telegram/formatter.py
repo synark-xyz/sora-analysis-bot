@@ -175,6 +175,78 @@ def format_signal_report(signal):
             lines.append("")
             lines.append(f"{'⚠️'} Risks: {' | '.join(items)}")
 
+    is_moomoo = signal.get("moomoo_report", False)
+    if is_moomoo:
+        es = signal.get("executive_summary", "")
+        if es:
+            lines.append("")
+            lines.append(f"{'📋'} <b>Executive Summary</b>")
+            lines.append(f"  {_html(es)}")
+
+        va = signal.get("valuation_assessment", {})
+        if va:
+            verdict = va.get("verdict", "")
+            metrics = va.get("key_metrics", "")
+            fve = va.get("fair_value_estimate", "")
+            lines.append("")
+            lines.append(f"{'💰'} <b>Valuation Assessment</b>")
+            if verdict:
+                emoji = {"undervalued": "🟢", "fair": "🟡", "overvalued": "🔴"}.get(verdict, "⚪")
+                lines.append(f"  Verdict: {emoji} {verdict}")
+            if metrics:
+                lines.append(f"  {_html(metrics[:200])}")
+            if fve:
+                lines.append(f"  Fair Value: {_html(fve[:100])}")
+
+        entry_strat = signal.get("entry_strategy", {})
+        if entry_strat:
+            lines.append("")
+            lines.append(f"{'🎯'} <b>Entry Strategy</b>")
+            tz = entry_strat.get("tactical_zone", {})
+            vz = entry_strat.get("value_zone", {})
+            scale = entry_strat.get("scale_in_plan", "")
+            if tz and tz.get("price"):
+                lines.append(f"  Tactical: ${tz['price']:.2f} — {_html(tz.get('reason', '')[:100])}")
+            if vz and vz.get("price"):
+                lines.append(f"  Value:    ${vz['price']:.2f} — {_html(vz.get('reason', '')[:100])}")
+            if scale:
+                lines.append(f"  Scale: {_html(scale[:150])}")
+
+        rm = signal.get("risk_management", {})
+        if rm:
+            lines.append("")
+            lines.append(f"{'🛡️'} <b>Risk Management</b>")
+            stop_type = rm.get("stop_loss_type", "")
+            pos_size = rm.get("position_sizing", "")
+            mos = rm.get("margin_of_safety_pct", 0)
+            if stop_type:
+                lines.append(f"  Stop Type: {stop_type}")
+            if mos:
+                lines.append(f"  Margin of Safety: {mos:.0f}%")
+            if pos_size:
+                lines.append(f"  Sizing: {_html(pos_size[:150])}")
+
+        catalysts = signal.get("monitoring_catalysts", [])
+        if catalysts:
+            items = [_html(str(c)[:80]) for c in catalysts[:4]]
+            lines.append("")
+            lines.append(f"{'📅'} Catalysts to Watch: {' | '.join(items)}")
+
+        fb = signal.get("moomoo_framework_breakdown", {})
+        if fb:
+            lines.append("")
+            lines.append(f"{'🧠'} <b>Framework Breakdown</b>")
+            for step_key, step_label in [
+                ("step1_objective", "Objective"),
+                ("step3_fundamental_verdict", "Fundamental"),
+                ("step3_valuation_verdict", "Valuation"),
+                ("step3_technical_verdict", "Technical"),
+                ("step4_synthesis", "Synthesis"),
+            ]:
+                val = fb.get(step_key, "")
+                if val:
+                    lines.append(f"  {step_label}: {_html(val[:150])}")
+
     if reason:
         lines.append("")
         lines.append(f"<i>{reason}</i>")
@@ -237,10 +309,11 @@ def format_help():
     return """<b>Sora Bot v2 — Commands</b>
 
 <b>Analysis</b>
-  /analyze SYMBOL       Quick signal (technical, ~30s)
-  /analyze SYMBOL -full Deep report (~90s)
+  /analyze SYMBOL        Quick signal (technical, ~30s)
+  /analyze SYMBOL -full  Deep report (~90s)
+  /analyze SYMBOL -mm    Moomoo framework (5-step methodology)
   /analyze SYMBOL -swing Force swing timeframe
-  /analyze SYMBOL -long Force long-term
+  /analyze SYMBOL -long  Force long-term
 
 <b>Watchlist</b>
   /watchlist -add SYMBOL    Add symbol

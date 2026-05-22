@@ -100,3 +100,56 @@ def _fetch_institutional(symbol: str, api_key: str) -> float | None:
         return total
     except Exception:
         return None
+
+
+def get_valuation(symbol: str) -> dict:
+    """Fetch valuation metrics from FMP — P/B, P/S, PEG, EV/EBITDA, ROE, ROA, analyst estimates.
+    Returns {} on error or missing API key — never crashes."""
+    api_key = os.getenv("FMP_API_KEY", "")
+    if not api_key:
+        return {}
+
+    result = {}
+
+    try:
+        url = f"{FMP_BASE}/key-metrics/{symbol}"
+        t0 = time.monotonic()
+        resp = requests.get(url, params={"apikey": api_key, "limit": 1}, timeout=10)
+        elapsed = time.monotonic() - t0
+        resp.raise_for_status()
+        data = resp.json()
+        log.http("FMP key-metrics %s  %.1fs", symbol, elapsed)
+        if data:
+            m = data[0]
+            result["pb_ratio"] = m.get("pbRatio")
+            result["ps_ratio"] = m.get("psRatio")
+            result["peg_ratio"] = m.get("pegRatio")
+            result["ev_to_ebitda"] = m.get("enterpriseValueOverEBITDA")
+            result["roe"] = m.get("roe") or m.get("returnOnEquity")
+            result["roa"] = m.get("roa") or m.get("returnOnAssets")
+            result["current_ratio"] = m.get("currentRatio")
+            result["debt_to_equity"] = m.get("debtToEquity")
+            result["dividend_yield"] = m.get("dividendYield")
+            result["book_value_per_share"] = m.get("bookValuePerShare")
+    except Exception:
+        pass
+
+    try:
+        url = f"{FMP_BASE}/analyst-estimates/{symbol}"
+        t0 = time.monotonic()
+        resp = requests.get(url, params={"apikey": api_key, "limit": 1}, timeout=10)
+        elapsed = time.monotonic() - t0
+        resp.raise_for_status()
+        data = resp.json()
+        log.http("FMP analyst-est %s  %.1fs", symbol, elapsed)
+        if data:
+            e = data[0]
+            result["estimated_eps_current"] = e.get("estimatedEpsCurrentYear")
+            result["estimated_eps_next"] = e.get("estimatedEpsNextYear")
+            result["estimated_revenue_current"] = e.get("estimatedRevenueCurrentYear")
+            result["estimated_revenue_next"] = e.get("estimatedRevenueNextYear")
+            result["number_analysts"] = e.get("numberAnalystEstimates")
+    except Exception:
+        pass
+
+    return {k: v for k, v in result.items() if v is not None}
