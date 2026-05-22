@@ -141,14 +141,17 @@ class Daemon:
                 try:
                     signal = await asyncio.to_thread(run_pipeline, sym, "us", "swing")
                     if signal and signal.get("verdict") != "HOLD" and signal.get("gate_passed"):
-                        # Skip BUY if price already well above entry zone (missed entry)
                         if signal.get("verdict") == "BUY":
-                            entry_high = signal.get("entry_high")
-                            if entry_high:
-                                price = await asyncio.to_thread(_get_current_price, sym, "us")
-                                if price and price > entry_high * 1.05:
+                            price = await asyncio.to_thread(_get_current_price, sym, "us")
+                            if price:
+                                entry_high = signal.get("entry_high")
+                                if entry_high and price > entry_high * 1.05:
                                     print(f"[Daemon] {sym} BUY — ${price:.2f} above entry (${entry_high:.2f}), skipped")
                                     continue
+                                # Tighten entry zone to real-time price (±0.3%)
+                                signal = dict(signal)
+                                signal["entry_low"] = round(price * 0.997, 2)
+                                signal["entry_high"] = round(price * 1.003, 2)
                         report = format_signal_report(signal)
                         await handler.send_message(report)
                         print(f"[Daemon] Signal fired: {sym} {signal.get('verdict')}")
@@ -186,12 +189,16 @@ class Daemon:
                     signal = await asyncio.to_thread(run_pipeline, sym, "crypto", "swing")
                     if signal and signal.get("verdict") != "HOLD" and signal.get("gate_passed"):
                         if signal.get("verdict") == "BUY":
-                            entry_high = signal.get("entry_high")
-                            if entry_high:
-                                price = await asyncio.to_thread(_get_current_price, sym, "crypto")
-                                if price and price > entry_high * 1.05:
+                            price = await asyncio.to_thread(_get_current_price, sym, "crypto")
+                            if price:
+                                entry_high = signal.get("entry_high")
+                                if entry_high and price > entry_high * 1.05:
                                     print(f"[Daemon] {sym} BUY — ${price:.2f} above entry (${entry_high:.2f}), skipped")
                                     continue
+                                # Tighten entry zone to real-time price (±0.5% for crypto volatility)
+                                signal = dict(signal)
+                                signal["entry_low"] = round(price * 0.995, 2)
+                                signal["entry_high"] = round(price * 1.005, 2)
                         report = format_signal_report(signal)
                         await handler.send_message(report)
                         print(f"[Daemon] Signal fired: {sym} {signal.get('verdict')}")
