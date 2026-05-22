@@ -1,0 +1,410 @@
+{
+  "project": "noor-bot",
+  "version": "1.0-mvp",
+  "last_updated": "2026-05-21",
+  "concept": "Telegram-only AI signal agent. No UI. No trading execution. Personal use. US stocks + crypto. Entry/exit zone reports with full reasoning. Self-improving via Karpathy wiki + autoresearch loop.",
+  "markets": ["US_EQUITIES", "CRYPTO"],
+  "interface": "telegram_only",
+  "llm_provider": "openrouter_free",
+  "sections_complete": 8,
+  "sections_total": 8,
+
+  "s1_structure": {
+    "title": "Structure & Architecture",
+    "status": "APPROVED",
+    "entry_point": "bot.py",
+    "pattern": "asyncio.gather(TelegramHandler.run(), Daemon.run()) — single process, no web server",
+    "env_vars_required": [
+      "TELEGRAM_BOT_TOKEN",
+      "TELEGRAM_CHAT_ID",
+      "OPENROUTER_API_KEY",
+      "ALPACA_API_KEY",
+      "ALPACA_SECRET_KEY"
+    ],
+    "directory_layout": {
+      "bot.py": "entry point — asyncio runner",
+      "telegram/": {
+        "handler.py": "command routing and dispatch",
+        "formatter.py": "build Telegram messages from signal data",
+        "chart.py": "matplotlib candlestick PNG generator"
+      },
+      "engine/": {
+        "orchestrator.py": "13-step pipeline — ported from pipeline/orchestrator.py, adapted for multi-market",
+        "strategies.py": "5 strategies — ported unchanged from core/strategies.py",
+        "confidence.py": "7-dimension scoring — ported unchanged from core/confidence.py",
+        "regime.py": "SPY regime detection — ported, adapted for crypto (24/7)",
+        "filters.py": "earnings/liquidity/volume filters — ported, earnings filter disabled for crypto"
+      },
+      "data/": {
+        "us_feed.py": "Alpaca OHLCV — NASDAQ/NYSE daily bars",
+        "crypto_feed.py": "CoinGecko free API — BTC/ETH/SOL etc."
+      },
+      "analysis/": {
+        "news.py": "Yahoo Finance RSS + SEC EDGAR full-text search (free, no key)",
+        "sentiment.py": "Reddit API + CryptoPanic RSS",
+        "fundamental.py": "FMP free tier — P/E, revenue growth, insider activity, institutional ownership"
+      },
+      "llm/": {
+        "client.py": "OpenRouter adapter — async httpx, model routing, retry with backoff",
+        "analyst.py": "signal analysis prompts — injects strategy wiki + market data",
+        "reporter.py": "parse LLM output → structured signal dict"
+      },
+      "memory/": {
+        "wiki.py": "Ingest / Query / Lint operations on knowledge/wiki/",
+        "profile.py": "user profile derived from wiki — injected into every analysis",
+        "feedback.py": "/did command processing — log to DB + trigger wiki ingest",
+        "learner.py": "autoresearch loop — weekly signal outcome evaluation + weight updates"
+      },
+      "scheduler/": {
+        "daemon.py": "cron scheduler — US scans 3x/day, crypto 6x/day, learning loop Sunday"
+      },
+      "db/": {
+        "store.py": "SQLite operations — 6 tables only"
+      },
+      "knowledge/": {
+        "SCHEMA.md": "user writes once — defines wiki structure and update conventions",
+        "wiki/strategy.md": "LLM-maintained — distilled trading rules",
+        "wiki/patterns.md": "LLM-maintained — detected behavioral patterns",
+        "wiki/lessons.md": "LLM-maintained — signal outcomes and learnings",
+        "wiki/regime.md": "LLM-maintained — performance by market condition",
+        "wiki/symbols/": "one .md per watchlist symbol — LLM-maintained",
+        "raw/": "append-only log of all raw user inputs and analyses"
+      }
+    },
+    "db_schema": {
+      "watchlist": ["symbol TEXT", "market TEXT (us|crypto)", "added_at TIMESTAMP"],
+      "signals": ["id", "symbol", "market", "verdict (BUY|SELL|HOLD)", "confidence REAL", "entry_low REAL", "entry_high REAL", "exit_target REAL", "stop_loss REAL", "rr_ratio REAL", "reason TEXT", "strategy TEXT", "regime TEXT", "created_at TIMESTAMP"],
+      "signal_outcomes": ["signal_id FK", "actual_return_3d REAL", "actual_return_7d REAL", "actual_return_14d REAL", "updated_at TIMESTAMP"],
+      "user_feedback": ["signal_id FK", "action TEXT (took|skip|partial)", "reason TEXT", "emotional_state TEXT", "created_at TIMESTAMP"],
+      "user_profile": ["id INTEGER DEFAULT 1", "profile_json TEXT", "updated_at TIMESTAMP"],
+      "agent_lessons": ["id", "lesson_type TEXT", "symbol TEXT", "pattern TEXT", "confidence_impact REAL", "applied_count INTEGER", "created_at TIMESTAMP"]
+    },
+    "deleted_from_current_codebase": [
+      "ui/ — entire React frontend (18 pages)",
+      "run.py — 3232-line Flask monolith",
+      "core/paper_trader.py",
+      "core/analytics.py — duplicate functions, broken",
+      "core/coach.py — 51-line stub",
+      "payment/ — Stripe, wallet",
+      "compliance/ — Shariah screener (user manages watchlist manually)"
+    ]
+  },
+
+  "s2_knowledge_base": {
+    "title": "Knowledge Base — Karpathy LLM Wiki + Autoresearch Loop",
+    "status": "APPROVED",
+    "pattern": "karpathy_llm_wiki",
+    "references": [
+      "https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f",
+      "https://github.com/karpathy/autoresearch"
+    ],
+    "core_principle": "User feeds raw thoughts anywhere. LLM distills into wiki. LLM never lets wiki rot. User never manually maintains files.",
+    "wiki_operations": {
+      "INGEST": {
+        "trigger": "/note, /think, /did, /strategy add — any raw user input",
+        "action": "LLM processes raw input, updates 3-5 relevant wiki pages in knowledge/wiki/",
+        "example": "/note 'NVDA P/E at 60x, looks overextended' → updates wiki/symbols/NVDA.md + reinforces valuation-check rule in wiki/strategy.md"
+      },
+      "QUERY": {
+        "trigger": "/analyze SYMBOL, /wiki SYMBOL",
+        "action": "Load wiki/strategy.md + wiki/symbols/SYMBOL.md + wiki/patterns.md as LLM context. Synthesize against fresh market data.",
+        "result": "Signal analysis checked against user's own criteria — not generic"
+      },
+      "LINT": {
+        "trigger": "weekly cron Sunday + /wiki lint command",
+        "action": "LLM health-checks all wiki pages: contradictions, stale claims, orphan pages, data gaps",
+        "example": "Detects: 'strategy.md says avoid earnings but patterns.md shows 3 earnings plays last month'"
+      }
+    },
+    "user_input_channels": {
+      "/note \"text\"": "free-form thought capture — ingested into relevant wiki pages",
+      "/note -symbol SYMBOL \"text\"": "symbol-specific annotation",
+      "/think SYMBOL \"text\"": "pre-analysis thesis — included in next /analyze call",
+      "/did SYMBOL took": "trade feedback — you took the signal",
+      "/did SYMBOL skip -reason \"text\" -emotion calm|anxious": "skip feedback with context",
+      "/did SYMBOL partial": "partial position taken",
+      "/strategy add \"rule\"": "explicit rule append to wiki/strategy.md",
+      "SCHEMA.md edit": "user edits once to define wiki structure and conventions"
+    },
+    "autoresearch_loop": {
+      "schedule": "Sunday 8pm user timezone",
+      "steps": [
+        "1. EVALUATE — pull last week signals + actual price outcomes from signal_outcomes table",
+        "2. COMPARE — which strategies predicted correctly? which failed by regime/market?",
+        "3. MODIFY — update confidence weights in wiki/lessons.md",
+        "4. BACKTEST — test updated weights against last 30 days historical data via engine",
+        "5. KEEP/REVERT — if accuracy improves: commit wiki changes. if worse: revert + log reason",
+        "6. REPORT — weekly digest to Telegram with accuracy stats + wiki changes made"
+      ],
+      "analogy": "program.md = SCHEMA.md + wiki. train.py = confidence weights. val_metric = signal accuracy %"
+    },
+    "wiki_context_in_analysis": {
+      "injected_per_analyze": ["wiki/strategy.md", "wiki/symbols/SYMBOL.md", "wiki/patterns.md"],
+      "result": "LLM checks signal against user's own criteria and flags violations explicitly"
+    }
+  },
+
+  "s3_commands_and_report": {
+    "title": "Command Design + Signal Report Format",
+    "status": "APPROVED",
+    "commands": {
+      "watchlist": {
+        "/watchlist -add SYMBOL": "add symbol — auto-detects market (us/crypto)",
+        "/watchlist -remove SYMBOL": "remove symbol",
+        "/watchlist -ls": "list all with market tag"
+      },
+      "analysis": {
+        "/analyze SYMBOL": "quick signal — technical only, ~30s, minimal report",
+        "/analyze SYMBOL -full": "deep report — technical + news + sentiment + catalyst, ~2min",
+        "/analyze SYMBOL -swing": "force swing timeframe (3–14 days)",
+        "/analyze SYMBOL -long": "force long-term timeframe (3–12 months)"
+      },
+      "drill_down": {
+        "/reasoning SYMBOL": "full technical breakdown for last signal",
+        "/backtest SYMBOL 6m": "backtest all 5 strategies on symbol, last N months",
+        "/backtest SYMBOL 12m -strategy bollinger": "specific strategy only",
+        "/catalyst SYMBOL": "earnings date, events, insider activity",
+        "/sentiment SYMBOL": "news + Reddit sentiment detail",
+        "/why SYMBOL": "entry zone rationale — why these levels specifically"
+      },
+      "market_state": {
+        "/regime": "current US + crypto regime snapshot",
+        "/regime SYMBOL": "symbol-specific regime context"
+      },
+      "knowledge_base": {
+        "/note \"text\"": "free-form thought → wiki ingest",
+        "/note -symbol SYMBOL \"text\"": "symbol-specific annotation",
+        "/think SYMBOL \"text\"": "pre-analysis thesis, injected into next /analyze",
+        "/strategy add \"rule\"": "append explicit rule to wiki/strategy.md",
+        "/wiki SYMBOL": "view symbol wiki page",
+        "/wiki strategy": "view distilled strategy",
+        "/wiki patterns": "view detected behavioral patterns",
+        "/wiki lint": "trigger manual wiki health check"
+      },
+      "feedback": {
+        "/trade SYMBOL took": "signal taken — logs to DB, triggers wiki ingest",
+        "/trade SYMBOL skip \"reason\"": "signal skipped with reason",
+        "/trade SYMBOL partial \"note\"": "partial position taken",
+        "/history SYMBOL 7d": "past signals for symbol, last N days",
+        "/profile": "your AI trading profile summary"
+      },
+      "system": {
+        "/scan": "scan full watchlist async — delivers results as ready",
+        "/scan -quick": "technical-only, no LLM, fast (<5s per symbol)",
+        "/status": "system health, last scan time, OpenRouter rate status",
+        "/help": "command reference"
+      }
+    },
+    "report_format": {
+      "philosophy": "standard report includes confidence breakdown. drill-downs for reasoning, backtest, catalyst, sentiment.",
+      "swing_report": {
+        "example": "━━━━━━━━━━━━━━━━━━━━━━━\n📊 AAPL  ·  BUY SIGNAL\n━━━━━━━━━━━━━━━━━━━━━━━\nConfidence  78 / 100  [HIGH]\nStrategy    BollingerSqueeze\nRegime      Trending (Bullish) · ADX 31\n\n📍 ENTRY ZONE    $183.50 – $185.00\n   Anchor: SMA50 at $182.80, VWAP at $183.10\n\n🎯 EXIT TARGET   $194.50  (+5.4%)\n   Anchor: Aug-24 resistance cluster, Fib 161.8% extension\n\n🛑 STOP LOSS     $179.00  (-2.5%)\n   Anchor: 1.5× ATR below entry\n\n⚖️  RISK / REWARD   1 : 2.2\n⏱  Timeframe        Swing (5–12 days)\n\nCONFIDENCE BREAKDOWN\n  Trend Strength      ████████░░  82%\n  Signal Alignment    ███████░░░  74%\n  Volatility Quality  ████████░░  80%\n  Volume Confirm      █████████░  88%\n  Regime Fit          ███████░░░  72%\n  Historical Perf     ██████░░░░  64%\n\nYour rules: ✓ all passed\n[chart PNG]",
+        "stop_loss_anchor": "1.5× ATR below entry",
+        "target_anchor": "prior resistance, Fibonacci extension",
+        "timeframe": "5–12 days"
+      },
+      "long_report": {
+        "example": "━━━━━━━━━━━━━━━━━━━━━━━\n📊 AAPL  ·  BUY SIGNAL\n━━━━━━━━━━━━━━━━━━━━━━━\nConfidence  71 / 100  [HIGH]\nStrategy    EMARSIVolume\nRegime      Trending (Bullish) · ADX 28\n\n📍 ENTRY ZONE    $180.00 – $184.00\n   Anchor: SMA200 at $179.50, weekly support cluster\n\n🎯 EXIT TARGET   $210.00  (+15.2%)\n   Anchor: 3-year highs, analyst consensus target\n\n🛑 STOP LOSS     $168.00  (-8.0%)\n   Anchor: 2× ATR · Weekly SMA200 invalidation\n\n⚖️  RISK / REWARD   1 : 1.9\n⏱  Timeframe        Long-term (3–9 months)\n\nCONFIDENCE BREAKDOWN\n  Trend Strength      ████████░░  80%\n  Signal Alignment    ██████░░░░  62%\n  Volatility Quality  ███████░░░  70%\n  Volume Confirm      ███████░░░  74%\n  Regime Fit          ████████░░  78%\n  Historical Perf     ███████░░░  72%\n\nFundamentals: Rev growth +8% YoY · P/E 28x · Insider: 3 buys\n\nYour rules: ✗ P/E above your 25x threshold\n[chart PNG]",
+        "stop_loss_anchor": "2× ATR · weekly SMA200 invalidation level",
+        "target_anchor": "multi-year resistance, analyst targets, Fibonacci extension",
+        "timeframe": "3–12 months",
+        "extra_field": "Fundamentals line added — revenue growth, P/E, insider activity"
+      },
+      "rules_check": {
+        "all_pass": "Your rules: ✓ all passed",
+        "violation": "Your rules: ✗ {rule_violated} ({detail})",
+        "multi_violation": "Your rules: ✗ Earnings 10d · ✗ P/E 28x (your max 25x)"
+      },
+      "removed_from_report_moved_to_commands": [
+        "technical reasoning text → /reasoning SYMBOL",
+        "backtest results → /backtest SYMBOL 6m",
+        "full catalyst section → /catalyst SYMBOL",
+        "full sentiment section → /sentiment SYMBOL",
+        "key levels table → /why SYMBOL"
+      ],
+      "chart_format": "matplotlib candlestick PNG — EMA21, EMA55, volume bars, entry zone shaded green, stop red dashed, target green dashed"
+    }
+  },
+
+  "s4_data_strategy": {
+    "title": "Multi-market Data Strategy — US Equities + Crypto",
+    "status": "APPROVED",
+    "markets": {
+      "us_equities": {
+        "feed": "Alpaca StockBarsRequest — daily bars, 500-bar history",
+        "universe": "NASDAQ + NYSE — any symbol Alpaca supports",
+        "market_hours": "Mon–Fri 9:30am–4:00pm EST",
+        "scan_schedule": ["9:30am EST", "12:00pm EST", "3:30pm EST"],
+        "fallback": "yfinance if Alpaca returns 429",
+        "news": "Yahoo Finance RSS (free, no key) + SEC EDGAR full-text search (free)",
+        "fundamentals": "FMP free tier — P/E, revenue growth YoY, insider buys, institutional ownership delta",
+        "earnings_calendar": "yfinance (free)"
+      },
+      "crypto": {
+        "feed": "CoinGecko /coins/{id}/ohlc — daily candles, free tier 30 req/min, no key",
+        "universe": "Major L1/L2 only — BTC, ETH, SOL, BNB, AVAX, LINK, etc.",
+        "meme_coin_filter": "auto-reject if market_cap < $5B OR coin_age < 2 years",
+        "market_hours": "24/7 — no hours guard",
+        "scan_schedule": "every 4 hours",
+        "symbol_map": "BTC→bitcoin, ETH→ethereum, SOL→solana (CoinGecko IDs)",
+        "news": "CryptoPanic RSS (free, no key) + Reddit r/CryptoCurrency",
+        "earnings_filter": "disabled — no earnings events for crypto",
+        "regime_source": "BTC 7-day trend + BTC dominance % (not SPY)"
+      }
+    },
+    "symbol_detection": {
+      "logic": "if symbol in KNOWN_CRYPTO_LIST → crypto. elif symbol.endswith('.T') → jp (Phase 2). else → us, verify via Alpaca assets API",
+      "known_crypto_list": ["BTC", "ETH", "SOL", "BNB", "AVAX", "LINK", "DOT", "MATIC", "ADA", "XRP"]
+    },
+    "indicator_parity": {
+      "all_5_strategies_run_on_both_markets": true,
+      "all_7_confidence_dimensions_run_on_both_markets": true,
+      "crypto_only_differences": [
+        "earnings filter disabled in filters.py",
+        "regime detection uses BTC dominance instead of SPY",
+        "liquidity filter uses 24h volume instead of avg daily volume"
+      ]
+    },
+    "phase_2": "JP stocks — native TSE (yfinance *.T) + US-listed ADRs (Alpaca)"
+  },
+
+  "s5_agents": {
+    "title": "Agent Design — Bull / Bear / Analyst / Review",
+    "status": "APPROVED",
+    "agents": {
+      "BullAgent": {
+        "role": "builds strongest possible bullish case",
+        "model": "meta-llama/llama-3.1-8b-instruct:free",
+        "input": ["symbol", "OHLCV bars", "indicators", "news", "fundamentals", "regime"],
+        "output": ["bull_thesis (text)", "bull_confidence (0–100)", "key_catalysts[]"]
+      },
+      "BearAgent": {
+        "role": "stress-tests bull thesis, builds bearish case",
+        "model": "meta-llama/llama-3.1-8b-instruct:free",
+        "input": ["symbol", "same data as BullAgent", "bull_thesis from BullAgent"],
+        "output": ["bear_thesis (text)", "bear_confidence (0–100)", "key_risks[]"]
+      },
+      "AnalystAgent": {
+        "role": "synthesizes bull+bear debate against user strategy wiki → final signal",
+        "model": "deepseek/deepseek-chat-v3-0324:free",
+        "input": ["bull_thesis", "bear_thesis", "indicators", "wiki/strategy.md", "wiki/symbols/SYMBOL.md", "wiki/patterns.md"],
+        "output": ["verdict (BUY|SELL|HOLD)", "confidence (0–100)", "entry_low", "entry_high", "exit_target", "stop_loss", "rr_ratio", "timeframe", "rules_check", "confidence_breakdown (7 dims)"]
+      },
+      "ReviewAgent": {
+        "role": "weekly autoresearch loop — evaluate signal accuracy, update weights, detect user patterns",
+        "model": "deepseek/deepseek-chat-v3-0324:free",
+        "input": ["last week signals", "signal_outcomes table", "user_feedback table", "wiki/lessons.md"],
+        "output": ["accuracy report", "updated confidence weights", "wiki page diffs", "behavioral pattern updates"],
+        "schedule": "Sunday 8pm user timezone"
+      }
+    },
+    "call_sequences": {
+      "/analyze SYMBOL -full": {
+        "steps": ["fetch bars (cached)", "fetch news (cached 2h)", "compute indicators (cached)", "BullAgent", "BearAgent", "AnalystAgent", "render chart PNG", "format + send"],
+        "llm_calls": 3,
+        "models": ["llama (Bull)", "llama (Bear)", "deepseek (Analyst)"],
+        "duration": "60–90s"
+      },
+      "/analyze SYMBOL": {
+        "steps": ["fetch bars (cached)", "compute indicators (cached)", "AnalystAgent only"],
+        "llm_calls": 1,
+        "models": ["deepseek (Analyst)"],
+        "duration": "20–30s"
+      },
+      "/scan -quick": {
+        "steps": ["fetch bars (cached)", "compute indicators", "return raw scores"],
+        "llm_calls": 0,
+        "duration": "~3s per symbol"
+      }
+    }
+  },
+
+  "s6_backtesting": {
+    "title": "Backtesting Design",
+    "status": "APPROVED",
+    "data_source": "Alpaca free historical daily bars — up to 5 years. CoinGecko for crypto.",
+    "simulation": {
+      "method": "walk-forward — indicators computed on bars[0:i] only, no lookahead",
+      "entry": "next bar open after signal fires",
+      "exit_conditions": ["stop hit (1.5×ATR)", "target hit (3×ATR)", "max hold days exceeded"],
+      "strategies_tested": ["EMARSIVolume", "SupertrendMACD", "BollingerSqueeze", "RSIMeanReversion", "VWAPMomentum"]
+    },
+    "output_per_strategy": ["win_rate %", "trades (W/total)", "avg_return %", "max_drawdown %"],
+    "cache": "analysis_reports table, TTL 7 days",
+    "integration": "AnalystAgent receives best-strategy backtest as context. Confidence dimension 6 (Historical Perf) populated from real backtest, not mock.",
+    "command": "/backtest SYMBOL 6m | 12m [-strategy name]"
+  },
+
+  "s7_caching_rate_limits": {
+    "title": "LLM Caching + Rate Limit Optimization",
+    "status": "APPROVED",
+    "problem": "OpenRouter free tier ~10 RPM. Full watchlist scan (30 symbols) = 90 LLM calls naive. Must reduce to ~5–10 actual calls.",
+    "three_layer_cache": {
+      "layer_1_indicators": {
+        "key": "symbol + date of latest bar",
+        "ttl": "until new daily bar available (~24h)",
+        "stores": "all computed indicators (RSI, EMA, ATR, etc.)",
+        "savings": "zero recompute for unchanged symbols"
+      },
+      "layer_2_llm_response": {
+        "key": "sha256(symbol + indicator_snapshot + regime + news_headlines)",
+        "ttl": "4 hours",
+        "stores": "full LLM signal response",
+        "savings": "if price/indicators unchanged in 4h → return cached signal, no LLM call"
+      },
+      "layer_3_news": {
+        "key": "symbol + feed_source",
+        "ttl": "2 hours",
+        "stores": "fetched + summarized news",
+        "savings": "news rarely changes meaningfully for swing trading in 2h"
+      }
+    },
+    "async_queue": {
+      "pattern": "asyncio.Queue — symbols enqueued, worker pool of 3 processes them",
+      "rate_limiter": "token bucket — max 8 LLM calls/min (buffer below 10 RPM limit)",
+      "backoff": "exponential backoff on 429 — 2s, 4s, 8s, max 3 retries",
+      "scan_behavior": "Telegram gets 'Scanning 28 symbols...' then results stream in as ready"
+    },
+    "practical_result": "30-symbol scan fires ~5 fresh LLM calls (only symbols with changed state). Rest from cache. Total scan time ~3–5 min vs 30 min naive."
+  },
+
+  "s8_migration": {
+    "title": "Migration Strategy",
+    "status": "APPROVED",
+    "branch": "feat/noor-bot-v2",
+    "approach": "new top-level structure in same repo. old code stays untouched until v2 verified working.",
+    "ported_unchanged": [
+      "core/strategies.py → engine/strategies.py",
+      "core/confidence.py → engine/confidence.py"
+    ],
+    "ported_with_adaptation": [
+      "pipeline/orchestrator.py → engine/orchestrator.py (remove Alpaca-only assumption, add market dispatch)",
+      "core/regime.py → engine/regime.py (add crypto regime via BTC dominance)",
+      "core/trade_filters.py → engine/filters.py (disable earnings filter for crypto)",
+      "pipeline/daemon.py → scheduler/daemon.py (simplify, add crypto 6x/day schedule)",
+      "core/llm_client.py → llm/client.py (OpenRouter instead of Anthropic SDK)"
+    ],
+    "deleted_after_v2_verified": [
+      "ui/ (entire React frontend)",
+      "run.py (Flask monolith)",
+      "core/paper_trader.py",
+      "core/analytics.py",
+      "core/coach.py",
+      "payment/",
+      "compliance/"
+    ],
+    "new_files": [
+      "bot.py",
+      "telegram/handler.py, formatter.py, chart.py",
+      "data/us_feed.py, crypto_feed.py",
+      "analysis/news.py, sentiment.py, fundamental.py",
+      "llm/analyst.py, reporter.py",
+      "memory/wiki.py, profile.py, feedback.py, learner.py",
+      "db/store.py (6-table schema)",
+      "knowledge/SCHEMA.md (user writes once)"
+    ],
+    "env_vars_required": ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "OPENROUTER_API_KEY", "ALPACA_API_KEY", "ALPACA_SECRET_KEY"],
+    "env_vars_removed": ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_KEY", "ENCRYPTION_KEY", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "STRIPE_SECRET_KEY"],
+    "run_command": "python bot.py"
+  }
+}
