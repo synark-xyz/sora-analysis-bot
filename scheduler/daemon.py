@@ -1,6 +1,5 @@
 import asyncio
-import os
-import signal
+import hashlib
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
 
@@ -31,10 +30,39 @@ def _is_us_market_open():
     return market_open <= now_et < market_close
 
 
+def _get_current_price(symbol: str, market: str) -> float | None:
+    try:
+        if market == "crypto":
+            _COINGECKO_IDS = {
+                "BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana",
+                "BNB": "binancecoin", "AVAX": "avalanche-2", "LINK": "chainlink",
+                "DOT": "polkadot", "MATIC": "polygon", "ADA": "cardano", "XRP": "ripple",
+            }
+            coin_id = _COINGECKO_IDS.get(symbol.upper())
+            if coin_id:
+                import requests
+                r = requests.get(
+                    "https://api.coingecko.com/api/v3/simple/price",
+                    params={"ids": coin_id, "vs_currencies": "usd"},
+                    timeout=10,
+                )
+                return r.json().get(coin_id, {}).get("usd")
+        else:
+            import yfinance as yf
+            info = yf.Ticker(symbol).fast_info
+            price = getattr(info, "last_price", None)
+            if price:
+                return float(price)
+    except Exception:
+        pass
+    return None
+
+
 class Daemon:
     def __init__(self):
         self.running = True
         self._last_scans = {}
+        self._seen_news: set = set()
 
     async def run(self):
         print("[Daemon] Started")
@@ -50,23 +78,41 @@ class Daemon:
         now_et = datetime.now(ET)
 
         if _is_trading_day(now_et.date()):
+            # Four US scan windows
             for scan_time, scan_name in [
-                ((9, 29), "us_morning"),
+                ((8, 30), "us_premarket"),   # 1 hr before open
+                ((9, 50), "us_postopen"),    # 20 min after open
                 ((11, 59), "us_midday"),
-                ((15, 29), "us_preclose"),
+                ((14, 30), "us_preclose"),   # 1 hr before close
             ]:
                 target = now_et.replace(hour=scan_time[0], minute=scan_time[1], second=0, microsecond=0)
-                key = f"us_{scan_name}_{now_et.date()}"
-                if target <= now_et < now_et.replace(second=30) and self._last_scans.get(key) != now_et.date().isoformat():
+                key = f"{scan_name}_{now_et.date()}"
+                if target <= now_et < target.replace(second=30) and self._last_scans.get(key) != now_et.date().isoformat():
                     self._last_scans[key] = now_et.date().isoformat()
                     await self._run_us_scan(scan_name)
 
+            # Position scan every 30 min during market hours
+            if _is_us_market_open():
+                if now_et.minute % 30 == 0 and now_et.second < 30:
+                    key = f"positions_{now_et.date()}_{now_et.hour}_{now_et.minute}"
+                    if self._last_scans.get(key) != key:
+                        self._last_scans[key] = key
+                        await self._run_position_scan("us")
+
+        # Crypto scans every 4 hours
         crypto_hour = now_et.hour
         if crypto_hour % 4 == 0 and now_et.minute == 0:
             key = f"crypto_{now_et.date()}_{crypto_hour}"
-            if self._last_scans.get(key) != now_et.isoformat(timespec="h"):
+            if self._last_scans.get(key) != now_et.isoformat(timespec="hours"):
                 self._last_scans[key] = now_et.isoformat(timespec="hours")
                 await self._run_crypto_scan()
+
+        # Crypto position scan every 2 hours at :30
+        if now_et.hour % 2 == 0 and now_et.minute == 30 and now_et.second < 30:
+            key = f"crypto_positions_{now_et.date()}_{now_et.hour}"
+            if self._last_scans.get(key) != key:
+                self._last_scans[key] = key
+                await self._run_position_scan("crypto")
 
         if now_et.weekday() == 6 and now_et.hour == 20 and now_et.minute == 0:
             key = f"weekly_{now_et.isocalendar()[1]}"
@@ -95,6 +141,14 @@ class Daemon:
                 try:
                     signal = await asyncio.to_thread(run_pipeline, sym, "us", "swing")
                     if signal and signal.get("verdict") != "HOLD" and signal.get("gate_passed"):
+                        # Skip BUY if price already well above entry zone (missed entry)
+                        if signal.get("verdict") == "BUY":
+                            entry_high = signal.get("entry_high")
+                            if entry_high:
+                                price = await asyncio.to_thread(_get_current_price, sym, "us")
+                                if price and price > entry_high * 1.05:
+                                    print(f"[Daemon] {sym} BUY — ${price:.2f} above entry (${entry_high:.2f}), skipped")
+                                    continue
                         report = format_signal_report(signal)
                         await handler.send_message(report)
                         print(f"[Daemon] Signal fired: {sym} {signal.get('verdict')}")
@@ -105,6 +159,7 @@ class Daemon:
                     print(f"[Daemon] {sym} pipeline error: {e}")
 
             print(f"[Daemon] US scan complete: {scan_name}")
+            await self._run_news_scan(us_symbols, "us")
         except ImportError as e:
             print(f"[Daemon] Engine not available (scan skipped): {e}")
         except Exception as e:
@@ -130,6 +185,13 @@ class Daemon:
                 try:
                     signal = await asyncio.to_thread(run_pipeline, sym, "crypto", "swing")
                     if signal and signal.get("verdict") != "HOLD" and signal.get("gate_passed"):
+                        if signal.get("verdict") == "BUY":
+                            entry_high = signal.get("entry_high")
+                            if entry_high:
+                                price = await asyncio.to_thread(_get_current_price, sym, "crypto")
+                                if price and price > entry_high * 1.05:
+                                    print(f"[Daemon] {sym} BUY — ${price:.2f} above entry (${entry_high:.2f}), skipped")
+                                    continue
                         report = format_signal_report(signal)
                         await handler.send_message(report)
                         print(f"[Daemon] Signal fired: {sym} {signal.get('verdict')}")
@@ -140,10 +202,94 @@ class Daemon:
                     print(f"[Daemon] {sym} pipeline error: {e}")
 
             print(f"[Daemon] Crypto scan complete: {len(crypto_symbols)} symbols")
+            await self._run_news_scan(crypto_symbols, "crypto")
         except ImportError as e:
             print(f"[Daemon] Engine not available (crypto scan skipped): {e}")
         except Exception as e:
             print(f"[Daemon] Crypto scan error: {e}")
+
+    async def _run_position_scan(self, market_filter: str = "all"):
+        try:
+            from db.store import get_open_positions, close_position
+            positions = await asyncio.to_thread(get_open_positions)
+
+            if market_filter != "all":
+                positions = [p for p in positions if p.get("market") == market_filter]
+
+            if not positions:
+                return
+
+            from telegram.handler import TelegramHandler
+            from telegram.formatter import format_sl_alert
+            handler = TelegramHandler()
+
+            for pos in positions:
+                sym = pos["symbol"]
+                market = pos.get("market", "us")
+                sl = pos.get("stop_loss")
+                tp = pos.get("take_profit")
+
+                if not sl and not tp:
+                    continue
+
+                price = await asyncio.to_thread(_get_current_price, sym, market)
+                if price is None:
+                    continue
+
+                if sl:
+                    pct_from_sl = (price - sl) / sl * 100
+                    if price <= sl:
+                        await asyncio.to_thread(close_position, sym, "sl_hit")
+                        await handler.send_message(format_sl_alert(pos, price, 0, hit=True))
+                        print(f"[Daemon] SL hit: {sym} @ ${price:.2f}")
+                        continue
+                    elif pct_from_sl <= 2.0:
+                        await handler.send_message(format_sl_alert(pos, price, pct_from_sl, hit=False))
+                        print(f"[Daemon] SL warning: {sym} {pct_from_sl:.1f}% from SL")
+
+                if tp and price >= tp:
+                    await asyncio.to_thread(close_position, sym, "tp_hit")
+                    pct_gain = (price - pos["entry_price"]) / pos["entry_price"] * 100
+                    await handler.send_message(
+                        f"🎯 <b>TARGET REACHED: {sym}</b>\n"
+                        f"Price: ${price:.2f}  →  Target: ${tp:.2f}\n"
+                        f"Gain: +{pct_gain:.1f}% from entry ${pos['entry_price']:.2f}\n"
+                        f"Consider taking profits."
+                    )
+                    print(f"[Daemon] TP hit: {sym} @ ${price:.2f}")
+
+        except Exception as e:
+            print(f"[Daemon] Position scan error: {e}")
+
+    async def _run_news_scan(self, symbols: list, market: str):
+        if not symbols:
+            return
+        try:
+            from analysis.news import fetch_news
+            from telegram.handler import TelegramHandler
+            from telegram.formatter import format_news_alert
+            handler = TelegramHandler()
+
+            for sym in symbols:
+                source = "cryptopanic" if market == "crypto" else "yahoo"
+                try:
+                    articles = await asyncio.to_thread(fetch_news, sym, source)
+                    for article in articles[:3]:
+                        title = article.get("title", "").strip()
+                        if not title:
+                            continue
+                        key = hashlib.md5(f"{sym}:{title}".encode()).hexdigest()
+                        if key in self._seen_news:
+                            continue
+                        self._seen_news.add(key)
+                        url = article.get("url", "")
+                        await handler.send_message(format_news_alert(sym, title, url))
+                        print(f"[Daemon] News alert: {sym} — {title[:60]}")
+                        break  # one alert per symbol per scan
+                except Exception as e:
+                    print(f"[Daemon] News {sym}: {e}")
+        except Exception as e:
+            print(f"[Daemon] News scan error: {e}")
 
     async def _run_weekly_review(self):
         print("[Daemon] Weekly review starting")

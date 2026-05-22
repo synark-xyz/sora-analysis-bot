@@ -90,9 +90,26 @@ def init_db():
                 expires_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS positions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                market TEXT NOT NULL,
+                entry_price REAL NOT NULL,
+                qty REAL,
+                stop_loss REAL,
+                take_profit REAL,
+                signal_id INTEGER,
+                status TEXT DEFAULT 'open' CHECK(status IN ('open', 'closed')),
+                taken_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                closed_at TIMESTAMP,
+                close_reason TEXT,
+                FOREIGN KEY (signal_id) REFERENCES signals(id)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_signals_created ON signals(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_signals_symbol ON signals(symbol);
             CREATE INDEX IF NOT EXISTS idx_lessons_type ON agent_lessons(lesson_type);
+            CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status);
         """)
         conn.commit()
     finally:
@@ -278,6 +295,47 @@ def cache_llm_get(input_hash, model):
         )
         row = c.fetchone()
         return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def add_position(symbol, market, entry_price, qty=None, stop_loss=None, take_profit=None, signal_id=None):
+    conn = _get_conn()
+    try:
+        c = conn.cursor()
+        c.execute(
+            """INSERT INTO positions (symbol, market, entry_price, qty, stop_loss, take_profit, signal_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (symbol.upper(), market, entry_price, qty, stop_loss, take_profit, signal_id),
+        )
+        conn.commit()
+        return c.lastrowid
+    finally:
+        conn.close()
+
+
+def get_open_positions():
+    conn = _get_conn()
+    try:
+        c = conn.cursor()
+        c.execute("SELECT * FROM positions WHERE status = 'open' ORDER BY taken_at DESC")
+        cols = [desc[0] for desc in c.description]
+        return [dict(zip(cols, row)) for row in c.fetchall()]
+    finally:
+        conn.close()
+
+
+def close_position(symbol, close_reason="manual"):
+    conn = _get_conn()
+    try:
+        c = conn.cursor()
+        c.execute(
+            """UPDATE positions SET status = 'closed', closed_at = datetime('now'), close_reason = ?
+               WHERE symbol = ? AND status = 'open'""",
+            (close_reason, symbol.upper()),
+        )
+        conn.commit()
+        return c.rowcount > 0
     finally:
         conn.close()
 

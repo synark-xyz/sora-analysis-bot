@@ -320,6 +320,11 @@ def format_help():
   /watchlist -remove SYMBOL Remove symbol
   /watchlist -ls            List all
 
+<b>Positions</b>
+  /position -add SYMBOL PRICE [QTY] [sl:X] [tp:X]
+  /position -ls             List open positions
+  /position -close SYMBOL   Close position
+
 <b>Knowledge</b>
   /note "text"              Free-form thought
   /note -symbol SYMBOL "text"
@@ -389,6 +394,62 @@ def format_history(signals):
             f"  {created}  {sym:<6} {verdict:<4} {conf:3.0f}  {strat}"
         )
     return "\n".join(lines)
+
+
+def format_positions(positions):
+    if not positions:
+        return "<b>No open positions.</b>\n\nAdd one: /position -add SYMBOL PRICE [sl:X] [tp:X]"
+
+    lines = [f"<b>Open Positions ({len(positions)})</b>", ""]
+    for p in positions:
+        sym = _html(p["symbol"])
+        entry = p.get("entry_price", 0)
+        sl = p.get("stop_loss")
+        tp = p.get("take_profit")
+        qty = p.get("qty")
+        taken = (p.get("taken_at") or "")[:10]
+
+        header = f"<b>{sym}</b>"
+        if qty:
+            header += f"  ×{qty}"
+        lines.append(header)
+        lines.append(f"  Entry:  ${entry:.2f}  [{taken}]")
+        if sl:
+            pct_sl = (sl - entry) / entry * 100
+            lines.append(f"  SL:     ${sl:.2f}  ({_pct_str(pct_sl)})")
+        if tp:
+            pct_tp = (tp - entry) / entry * 100
+            lines.append(f"  TP:     ${tp:.2f}  ({_pct_str(pct_tp)})")
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+def format_sl_alert(position, current_price: float, pct_from_sl: float, hit: bool = False):
+    sym = _html(position["symbol"])
+    entry = position.get("entry_price", 0)
+    sl = position.get("stop_loss", 0)
+    pct_entry = (current_price - entry) / entry * 100 if entry else 0
+
+    if hit:
+        return (
+            f"🛑 <b>STOP LOSS HIT: {sym}</b>\n"
+            f"Price: ${current_price:.2f}  |  SL: ${sl:.2f}\n"
+            f"P&L from entry: {_pct_str(pct_entry)}\n"
+            f"Position auto-closed."
+        )
+    return (
+        f"⚠️ <b>SL WARNING: {sym}</b>\n"
+        f"Price ${current_price:.2f} is {pct_from_sl:.1f}% above SL ${sl:.2f}\n"
+        f"P&L from entry: {_pct_str(pct_entry)}"
+    )
+
+
+def format_news_alert(symbol: str, title: str, url: str = ""):
+    sym = _html(symbol)
+    headline = _html(title)
+    if url:
+        return f"📰 <b>{sym}</b>: {headline}\n<a href=\"{url}\">Read more</a>"
+    return f"📰 <b>{sym}</b>: {headline}"
 
 
 def format_profile(profile):

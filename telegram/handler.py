@@ -38,6 +38,7 @@ from telegram.formatter import (
     format_backtest,
     format_history,
     format_profile,
+    format_positions,
 )
 
 try:
@@ -52,6 +53,9 @@ try:
         save_profile,
         save_lesson,
         get_lessons,
+        add_position,
+        get_open_positions,
+        close_position,
     )
 except ImportError:
     get_watchlist = lambda: []
@@ -64,6 +68,9 @@ except ImportError:
     save_profile = lambda p: None
     save_lesson = lambda lt, s, p, ci=0: 0
     get_lessons = lambda l=20: []
+    add_position = lambda s, m, ep, q=None, sl=None, tp=None, sid=None: 0
+    get_open_positions = lambda: []
+    close_position = lambda s, r="manual": False
 
 MAX_CHAT_HISTORY = 10
 
@@ -215,6 +222,7 @@ class TelegramHandler:
             "/think": self._handle_think,
             "/clear": self._handle_clear,
             "/cancel": self._handle_clear,
+            "/position": self._handle_position,
         }
 
         handler = cmd_map.get(cmd)
@@ -715,6 +723,88 @@ class TelegramHandler:
         reply = content or "No response from model."
         self._chat_history.append({"role": "assistant", "content": reply})
         await self.send_message(reply, chat_id=chat_id)
+
+    async def _handle_position(self, args, chat_id):
+        if not args:
+            await self.send_message(
+                "Usage: /position -add SYMBOL PRICE [QTY] [sl:PRICE] [tp:PRICE]\n"
+                "       /position -ls\n"
+                "       /position -close SYMBOL",
+                chat_id=chat_id,
+            )
+            return
+
+        parts = args.split()
+        flag = parts[0].lower()
+
+        if flag in ("-ls", "--ls", "ls"):
+            positions = await asyncio.to_thread(get_open_positions)
+            await self.send_message(format_positions(positions), chat_id=chat_id)
+
+        elif flag in ("-add", "--add", "add"):
+            if len(parts) < 3:
+                await self.send_message(
+                    "Usage: /position -add SYMBOL PRICE [QTY] [sl:PRICE] [tp:PRICE]",
+                    chat_id=chat_id,
+                )
+                return
+            symbol = parts[1].upper()
+            try:
+                entry_price = float(parts[2])
+            except ValueError:
+                await self.send_message("Entry price must be a number", chat_id=chat_id)
+                return
+
+            qty = None
+            stop_loss = None
+            take_profit = None
+            for p in parts[3:]:
+                if p.startswith("sl:"):
+                    try:
+                        stop_loss = float(p[3:])
+                    except ValueError:
+                        pass
+                elif p.startswith("tp:"):
+                    try:
+                        take_profit = float(p[3:])
+                    except ValueError:
+                        pass
+                else:
+                    try:
+                        qty = float(p)
+                    except ValueError:
+                        pass
+
+            market = self._detect_market(symbol)
+            await asyncio.to_thread(add_position, symbol, market, entry_price, qty, stop_loss, take_profit)
+
+            parts_msg = [f"Position logged: <b>{symbol}</b> @ ${entry_price:.2f}"]
+            if qty:
+                parts_msg.append(f"Qty: {qty}")
+            if stop_loss:
+                parts_msg.append(f"SL: ${stop_loss:.2f}")
+            if take_profit:
+                parts_msg.append(f"TP: ${take_profit:.2f}")
+            await self.send_message(" · ".join(parts_msg), chat_id=chat_id)
+
+        elif flag in ("-close", "--close", "close"):
+            if len(parts) < 2:
+                await self.send_message("Usage: /position -close SYMBOL", chat_id=chat_id)
+                return
+            symbol = parts[1].upper()
+            closed = await asyncio.to_thread(close_position, symbol, "manual")
+            if closed:
+                await self.send_message(f"Position closed: {symbol}", chat_id=chat_id)
+            else:
+                await self.send_message(f"No open position found for {symbol}", chat_id=chat_id)
+
+        else:
+            await self.send_message(
+                "Usage: /position -add SYMBOL PRICE [QTY] [sl:PRICE] [tp:PRICE]\n"
+                "       /position -ls\n"
+                "       /position -close SYMBOL",
+                chat_id=chat_id,
+            )
 
     async def _handle_clear(self, args, chat_id):
         self._chat_history = []
