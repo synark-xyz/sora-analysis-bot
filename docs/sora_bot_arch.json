@@ -1,5 +1,5 @@
 {
-  "project": "noor-bot",
+  "project": "sora-bot",
   "version": "1.0-mvp",
   "last_updated": "2026-05-21",
   "concept": "Telegram-only AI signal agent. No UI. No trading execution. Personal use. US stocks + crypto. Entry/exit zone reports with full reasoning. Self-improving via Karpathy wiki + autoresearch loop.",
@@ -371,7 +371,7 @@
   "s8_migration": {
     "title": "Migration Strategy",
     "status": "APPROVED",
-    "branch": "feat/noor-bot-v2",
+    "branch": "feat/sora-bot-v2",
     "approach": "new top-level structure in same repo. old code stays untouched until v2 verified working.",
     "ported_unchanged": [
       "core/strategies.py → engine/strategies.py",

@@ -36,7 +36,8 @@ async def main():
 
 
 if __name__ == "__main__":
-    print("Noor Bot v2 starting...")
+    print("Sora Bot v2 starting...")
+
     asyncio.run(main())
-    print("Noor Bot stopped")
+    print("Sora Bot stopped")
     sys.exit(0)

@@ -1,8 +1,8 @@
-# Noor Bot v2 — Design Spec
+# Sora Bot v2 — Design Spec
 
 **Date:** 2026-05-21  
 **Status:** Approved  
-**Branch:** `feat/noor-bot-v2`  
+**Branch:** `feat/sora-bot-v2`
 **Reference:** `docs/noor_bot_arch.json` (machine-readable, implementation-ready)
 
 ---
@@ -206,7 +206,7 @@ Async queue: `asyncio.Queue` + worker pool of 3. Token bucket rate limiter at 8 
 
 ## Section 8 — Migration
 
-**Branch:** `feat/noor-bot-v2`
+**Branch:** `feat/sora-bot-v2`
 
 **Port unchanged:** `core/strategies.py`, `core/confidence.py`
 

@@ -32,7 +32,7 @@ class LLMClient:
         self,
         model: str = DEFAULT_MODEL,
         api_key: Optional[str] = None,
-        db_path: str = "noor.db",
+        db_path: str = "sora.db",
     ):
         self.model = model
         self._key = api_key or _get_api_key()
@@ -168,8 +168,8 @@ class LLMClient:
         return {
             "Authorization": f"Bearer {self._key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://noor-trading.app",
-            "X-Title": "Noor Trading Bot",
+            "HTTP-Referer": "https://sora-trading.app",
+            "X-Title": "Sora Trading Bot",
         }
 
     def _cache_key(self, messages: list[dict], model: str) -> str:

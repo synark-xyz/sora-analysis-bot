@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-## Project: Noor Telegram Bot (v2)
+## Project: Sora Telegram Bot (v2)
 
 Personal-use Telegram-based AI trading signal agent. No UI, no trading execution. Provides entry/exit zone signals for US stocks + crypto with full reasoning.
 
@@ -41,4 +41,4 @@ python-telegram-bot, httpx, alpaca-py, pandas, yfinance, openai, matplotlib, mpl
 
 ## Migrated From
 
-Original code in `noor-trading-bot` (commit: 15d0130fb0c6ec124095f2d4bd8427f50c07ccee), extracted as clean v2 project.
+Original code in `sora-trading-bot` (commit: 15d0130fb0c6ec124095f2d4bd8427f50c07ccee), extracted as clean v2 project.

@@ -154,7 +154,7 @@ def format_regime(regime):
 
 
 def format_help():
-    return """<b>Noor Bot v2 — Commands</b>
+    return """<b>Sora Bot v2 — Commands</b>
 
 <b>Analysis</b>
   /analyze SYMBOL       Quick signal (technical, ~30s)

@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 
 
-DB_PATH = os.environ.get("DB_PATH", "noor.db")
+DB_PATH = os.environ.get("DB_PATH", "sora.db")
 
 
 def _get_conn():

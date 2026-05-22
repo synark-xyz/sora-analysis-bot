@@ -382,7 +382,7 @@ class TelegramHandler:
 
         llm_cache_count = 0
         try:
-            conn = __import__("sqlite3").connect(os.environ.get("DB_PATH", "noor.db"))
+            conn = __import__("sqlite3").connect(os.environ.get("DB_PATH", "sora.db"))
             c = conn.cursor()
             c.execute("SELECT COUNT(*) FROM llm_cache")
             llm_cache_count = c.fetchone()[0]
