@@ -1,7 +1,6 @@
 import asyncio
 import os
 import re
-import signal
 import sys
 from datetime import datetime
 
@@ -635,9 +634,6 @@ class TelegramHandler:
         await self._ensure_client()
         print("[Telegram] Handler started")
         offset = 0
-
-        signal.signal(signal.SIGINT, lambda s, f: setattr(self, "running", False))
-        signal.signal(signal.SIGTERM, lambda s, f: setattr(self, "running", False))
 
         while self.running:
             offset = await self.poll_updates(offset)

@@ -21,16 +21,22 @@ async def main():
     telegram = TelegramHandler()
     daemon = Daemon()
 
-    await asyncio.gather(
-        telegram.run(),
-        daemon.run(),
-    )
+    tasks = [
+        asyncio.create_task(telegram.run()),
+        asyncio.create_task(daemon.run()),
+    ]
+
+    try:
+        await asyncio.gather(*tasks)
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        print("\n[Bot] Shutting down...")
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 if __name__ == "__main__":
-    print("No Trading Bot v2 starting...")
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\n Noor Bot stopped")
-        sys.exit(0)
+    print("Noor Bot v2 starting...")
+    asyncio.run(main())
+    print("Noor Bot stopped")
+    sys.exit(0)

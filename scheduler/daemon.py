@@ -37,8 +37,6 @@ class Daemon:
         self._last_scans = {}
 
     async def run(self):
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
         print("[Daemon] Started")
 
         while self.running:
@@ -47,10 +45,6 @@ class Daemon:
             except Exception as e:
                 print(f"[Daemon] Error: {e}")
             await asyncio.sleep(30)
-
-    def _signal_handler(self, signum, frame):
-        self.running = False
-        print("\n[Daemon] Shutdown signal received")
 
     async def _tick(self):
         now_et = datetime.now(ET)
