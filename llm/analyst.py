@@ -1,39 +1,73 @@
+import os
 from typing import Optional
 
 from llm.client import LLMClient, FAST_MODEL, ANALYSIS_MODEL
+from analysis.moomoo import build_moomoo_prompt
 
-BULL_MODEL = "openrouter/free"
-BEAR_MODEL = "openrouter/free"
+BULL_MODEL = os.getenv("FAST_MODEL", "openrouter/free")
+BEAR_MODEL = os.getenv("FAST_MODEL", "openrouter/free")
 
-BULL_SYSTEM_PROMPT = """You are BullAgent, an expert bullish analyst. Build the strongest possible bullish case. Be specific with price levels and catalysts. Never fabricate data — use only what is provided. Return ONLY valid JSON, no other text."""
+BULL_SYSTEM_PROMPT = """You are BullAgent, an expert bullish analyst. Build the strongest bullish case using ONLY provided data. Never fabricate data.
 
-BEAR_SYSTEM_PROMPT = """You are BearAgent, an expert risk analyst. Stress-test the bull thesis and build the strongest bearish counter-case. Identify hidden risks, overoptimistic assumptions, and technical weaknesses. Be specific with price levels. Return ONLY valid JSON, no other text."""
-
-ANALYST_SYSTEM_PROMPT = """You are AnalystAgent, the final decision-maker. Synthesize the bull and bear arguments against the user's own trading strategy (from their wiki). Return a structured verdict.
-
-You MUST return valid JSON with these exact keys:
+Return JSON only:
 {
-  "verdict": "BUY|SELL|HOLD",
-  "confidence": 0-100,
+  "catalysts": ["string"],
+  "target_levels": {"key_resistance": 0.0, "breakout_point": 0.0},
+  "thesis_summary": "string"
+}
+"""
+
+BEAR_SYSTEM_PROMPT = """You are BearAgent, an expert risk analyst. Stress-test the bull thesis using ONLY provided data. Identify hidden risks and technical weaknesses.
+
+Return JSON only:
+{
+  "hidden_risks": ["string"],
+  "flawed_assumptions": ["string"],
+  "support_levels": {"key_support": 0.0, "breakdown_point": 0.0},
+  "counter_summary": "string"
+}
+"""
+
+ANALYST_SYSTEM_PROMPT = """You are AnalystAgent, the final compliance decision-maker. Synthesize the Bull and Bear arguments against the Live Strategy Rules provided in the user message. 
+
+Strictly fail the trade (Verdict: HOLD or WAIT) if the trade setup violates any active constraints, such as minimum Risk-to-Reward (R:R) or forbidden setups.
+
+Return JSON only:
+{
+  "verdict": "BUY|SELL|HOLD|WAIT",
+  "confidence": 75,  # integer 0-100
   "entry_low": 0.0,
-  "entry_high": 0.0,
   "exit_target": 0.0,
   "stop_loss": 0.0,
   "rr_ratio": 0.0,
   "timeframe": "Swing (5-12 days)",
-  "summary": "1-2 sentence rationale",
-  "rules_check": "all passed",
-  "confidence_breakdown": {
-    "trend_strength": 0-100,
-    "signal_alignment": 0-100,
-    "volatility_quality": 0-100,
-    "volume_confirm": 0-100,
-    "regime_fit": 0-100,
-    "historical_perf": 0-100
+  "summary": "string",
+  "executive_summary": "string",
+  "valuation_assessment": {
+    "verdict": "undervalued|fair|overvalued",
+    "key_metrics": "string",
+    "fair_value_estimate": "string"
+  },
+  "entry_strategy": {
+    "tactical_zone": {"price": 0.0, "reason": "string"},
+    "value_zone": {"price": 0.0, "reason": "string"},
+    "scale_in_plan": "string"
+  },
+  "risk_management": {
+    "stop_loss_type": "technical|percentage|fundamental",
+    "position_sizing": "string",
+    "margin_of_safety_pct": 0.0
+  },
+  "monitoring_catalysts": ["string"],
+  "moomoo_framework_breakdown": {
+    "step1_objective": "string",
+    "step3_fundamental_verdict": "string",
+    "step3_valuation_verdict": "string",
+    "step3_technical_verdict": "string",
+    "step4_synthesis": "string"
   }
 }
-
-Only output the raw JSON object — no markdown fences, no explanation, no extra text."""
+"""
 
 
 async def analyze_quick(
@@ -115,3 +149,38 @@ Fundamentals: {fundamentals}"""
     synthesis["key_catalysts"] = bull_result.get("key_catalysts", [])
     synthesis["key_risks"] = bear_result.get("key_risks", [])
     return synthesis
+
+
+async def analyze_moomoo(
+    symbol: str,
+    indicators: dict,
+    regime: dict,
+    news: str,
+    fundamentals: str,
+    valuation: str,
+    wiki_context: str = "",
+    llm: Optional[LLMClient] = None,
+) -> dict:
+    llm = llm or LLMClient(model=ANALYSIS_MODEL)
+    full_prompt = build_moomoo_prompt(
+        symbol=symbol,
+        indicators=indicators,
+        regime=regime,
+        news=news,
+        fundamentals=fundamentals,
+        valuation=valuation,
+        wiki_context=wiki_context,
+    )
+    messages = [
+        {"role": "system", "content": MOOMOO_SYSTEM_PROMPT},
+        {"role": "user", "content": full_prompt},
+    ]
+    result = await llm.complete_json(messages, temperature=0.2, max_tokens=4096, use_cache=True)
+    result["moomoo_report"] = True
+    for required in ("summary", "executive_summary", "entry_strategy", "risk_management"):
+        result.setdefault(required, "")
+    for required in ("entry_low", "entry_high", "exit_target", "stop_loss", "rr_ratio", "confidence"):
+        result.setdefault(required, 0)
+    result.setdefault("verdict", "HOLD")
+    result.setdefault("timeframe", "Swing (5-12 days)")
+    return result

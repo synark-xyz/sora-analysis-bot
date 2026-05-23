@@ -17,6 +17,7 @@ ENV/
 *.sqlite
 *.log
 logs/
+docs/superpowers/
 *.tmp
 .coverage
 node_modules/

@@ -711,11 +711,72 @@ async def _run_full_analysis(symbol: str, market: str) -> dict:
         return {}
 
 
+async def _run_moomoo_analysis(symbol: str, market: str) -> dict:
+    try:
+        from llm.analyst import analyze_moomoo
+
+        bars = _fetch_bars(symbol, market)
+        if not bars or len(bars) < 20:
+            return {}
+        indicators = _compute_indicators(symbol, bars)
+
+        regime = None
+        try:
+            from engine.regime import detect_regime
+            regime = detect_regime(bars, market)
+        except Exception:
+            pass
+
+        news = ""
+        try:
+            from analysis.news import fetch_news
+            news_items = fetch_news(symbol)
+            news = "; ".join(n.get("title", "") for n in news_items[:5])
+        except Exception:
+            pass
+
+        fundamentals = ""
+        try:
+            from analysis.fundamental import get_fundamentals
+            fundamentals = str(get_fundamentals(symbol))
+        except Exception:
+            pass
+
+        valuation = ""
+        try:
+            from analysis.fundamental import get_valuation
+            valuation = str(get_valuation(symbol))
+        except Exception:
+            pass
+
+        wiki_context = ""
+        try:
+            from memory.wiki import query_wiki
+            wiki_context = await query_wiki(symbol)
+        except Exception:
+            pass
+
+        regime_dict = {"regime": regime.regime if regime else "N/A", "adx": indicators.get("adx", 0)}
+
+        return await analyze_moomoo(
+            symbol=symbol,
+            indicators=indicators,
+            regime=regime_dict,
+            news=news,
+            fundamentals=fundamentals,
+            valuation=valuation,
+            wiki_context=wiki_context,
+        )
+    except ImportError:
+        return {}
+
+
 async def run_analysis(
     symbol: str,
     full: bool = False,
     swing: bool = False,
     long_term: bool = False,
+    moomoo: bool = False,
 ) -> dict:
     import asyncio
     market = _detect_market(symbol)
@@ -728,7 +789,12 @@ async def run_analysis(
     result["market"] = market
     result["timeframe"] = "Position (weeks–months)" if long_term else "Swing (5–12 days)"
 
-    if full:
+    if moomoo:
+        llm_result = await _run_moomoo_analysis(symbol, market)
+        if llm_result:
+            result.update(llm_result)
+            result["timeframe"] = "Moomoo (Full Framework)"
+    elif full:
         llm_result = await _run_full_analysis(symbol, market)
         if llm_result:
             result["llm_report"] = True
