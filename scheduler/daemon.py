@@ -48,11 +48,21 @@ def _get_current_price(symbol: str, market: str) -> float | None:
                 )
                 return r.json().get(coin_id, {}).get("usd")
         else:
-            import yfinance as yf
-            info = yf.Ticker(symbol).fast_info
-            price = getattr(info, "last_price", None)
-            if price:
-                return float(price)
+            import os
+            from alpaca.data.historical import StockHistoricalDataClient
+            from alpaca.data.requests import StockLatestQuoteRequest
+            client = StockHistoricalDataClient(
+                os.getenv("ALPACA_API_KEY", ""),
+                os.getenv("ALPACA_SECRET_KEY", ""),
+            )
+            resp = client.get_stock_latest_quote(StockLatestQuoteRequest(symbol_or_symbols=[symbol]))
+            quote = resp.get(symbol)
+            if quote:
+                ask = getattr(quote, "ask_price", None)
+                bid = getattr(quote, "bid_price", None)
+                if ask and bid:
+                    return (ask + bid) / 2
+                return ask or bid
     except Exception:
         pass
     return None
