@@ -87,10 +87,8 @@ class Daemon:
         if _is_trading_day(now_et.date()):
             # Four US scan windows
             for scan_time, scan_name in [
-                ((8, 30), "us_premarket"),   # 1 hr before open
-                ((9, 50), "us_postopen"),    # 20 min after open
-                ((11, 59), "us_midday"),
-                ((14, 30), "us_preclose"),   # 1 hr before close
+                ((8, 30), "us_premarket"),
+                ((15, 0), "us_preclose"),
             ]:
                 target = now_et.replace(hour=scan_time[0], minute=scan_time[1], second=0, microsecond=0)
                 key = f"{scan_name}_{now_et.date()}"
@@ -106,20 +104,21 @@ class Daemon:
                         self._last_scans[key] = key
                         await self._run_position_scan("us")
 
-        # Crypto scans every 4 hours
-        crypto_hour = now_et.hour
-        if crypto_hour % 4 == 0 and now_et.minute == 0:
-            key = f"crypto_{now_et.date()}_{crypto_hour}"
-            if self._last_scans.get(key) != now_et.isoformat(timespec="hours"):
-                self._last_scans[key] = now_et.isoformat(timespec="hours")
-                await self._run_crypto_scan()
+        if _is_trading_day(now_et.date()):
+            # Crypto scans every 4 hours
+            crypto_hour = now_et.hour
+            if crypto_hour % 4 == 0 and now_et.minute == 0:
+                key = f"crypto_{now_et.date()}_{crypto_hour}"
+                if self._last_scans.get(key) != now_et.isoformat(timespec="hours"):
+                    self._last_scans[key] = now_et.isoformat(timespec="hours")
+                    await self._run_crypto_scan()
 
-        # Crypto position scan every 2 hours at :30
-        if now_et.hour % 2 == 0 and now_et.minute == 30 and now_et.second < 30:
-            key = f"crypto_positions_{now_et.date()}_{now_et.hour}"
-            if self._last_scans.get(key) != key:
-                self._last_scans[key] = key
-                await self._run_position_scan("crypto")
+            # Crypto position scan every 2 hours at :30
+            if now_et.hour % 2 == 0 and now_et.minute == 30 and now_et.second < 30:
+                key = f"crypto_positions_{now_et.date()}_{now_et.hour}"
+                if self._last_scans.get(key) != key:
+                    self._last_scans[key] = key
+                    await self._run_position_scan("crypto")
 
         if now_et.weekday() == 6 and now_et.hour == 20 and now_et.minute == 0:
             key = f"weekly_{now_et.isocalendar()[1]}"
