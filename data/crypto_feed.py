@@ -1,7 +1,7 @@
 """
-data/crypto_feed.py — Cryptocurrency OHLCV feed via CoinGecko free API.
+data/crypto_feed.py — Cryptocurrency OHLCV feed via Binance public API.
 
-No API key required. Rate limit: ~30 req/min on free tier.
+No API key required. Real-time data, no meaningful rate limit for public endpoints.
 Returns same dict format as us_feed.py for pipeline compatibility.
 """
 
@@ -12,33 +12,36 @@ from log import get_logger
 
 log = get_logger("data.crypto_feed", "DATA")
 
-COINGECKO_IDS = {
-    "BTC": "bitcoin",
-    "ETH": "ethereum",
-    "SOL": "solana",
-    "BNB": "binancecoin",
-    "AVAX": "avalanche-2",
-    "LINK": "chainlink",
-    "DOT": "polkadot",
-    "MATIC": "polygon",
-    "ADA": "cardano",
-    "XRP": "ripple",
+BINANCE_SYMBOLS = {
+    "BTC": "BTCUSDT",
+    "ETH": "ETHUSDT",
+    "SOL": "SOLUSDT",
+    "BNB": "BNBUSDT",
+    "AVAX": "AVAXUSDT",
+    "LINK": "LINKUSDT",
+    "DOT": "DOTUSDT",
+    "MATIC": "MATICUSDT",
+    "ADA": "ADAUSDT",
+    "XRP": "XRPUSDT",
 }
 
 
 def fetch_bars(symbol: str, days: int = 90) -> list[dict]:
-    coin_id = COINGECKO_IDS.get(symbol.upper())
-    if not coin_id:
-        return _mock_bars()
+    pair = BINANCE_SYMBOLS.get(symbol.upper())
+    if not pair:
+        return []
 
     try:
-        url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/ohlc"
         t0 = time.monotonic()
-        resp = requests.get(url, params={"vs_currency": "usd", "days": days}, timeout=15)
+        resp = requests.get(
+            "https://api.binance.com/api/v3/klines",
+            params={"symbol": pair, "interval": "1d", "limit": days},
+            timeout=15,
+        )
         elapsed = time.monotonic() - t0
         resp.raise_for_status()
         data = resp.json()
-        log.http("CoinGecko %s  %d bars  %.1fs", symbol, len(data), elapsed)
+        log.http("Binance %s  %d bars  %.1fs", symbol, len(data), elapsed)
         return [
             {
                 "time": int(c[0] // 1000),
@@ -46,13 +49,9 @@ def fetch_bars(symbol: str, days: int = 90) -> list[dict]:
                 "high": float(c[2]),
                 "low": float(c[3]),
                 "close": float(c[4]),
-                "volume": 0,
+                "volume": float(c[5]),
             }
             for c in data
         ]
     except Exception:
-        return _mock_bars()
-
-
-def _mock_bars() -> list[dict]:
-    return []
+        return []
