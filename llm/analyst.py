@@ -1,81 +1,99 @@
+import os
 from typing import Optional
 
 from llm.client import LLMClient, FAST_MODEL, ANALYSIS_MODEL
 from analysis.moomoo import build_moomoo_prompt
 
-BULL_MODEL = "openrouter/free"
-BEAR_MODEL = "openrouter/free"
+BULL_MODEL = os.getenv("FAST_MODEL", "openrouter/free")
+BEAR_MODEL = os.getenv("FAST_MODEL", "openrouter/free")
 
-BULL_SYSTEM_PROMPT = """You are BullAgent, an expert bullish analyst. Build the strongest possible bullish case. Be specific with price levels and catalysts. Never fabricate data — use only what is provided. Return ONLY valid JSON, no other text."""
+BULL_SYSTEM_PROMPT = """You are BullAgent, an expert bullish analyst. Build the strongest bullish case using ONLY provided data. Never fabricate data.
 
-BEAR_SYSTEM_PROMPT = """You are BearAgent, an expert risk analyst. Stress-test the bull thesis and build the strongest bearish counter-case. Identify hidden risks, overoptimistic assumptions, and technical weaknesses. Be specific with price levels. Return ONLY valid JSON, no other text."""
-
-ANALYST_SYSTEM_PROMPT = """You are AnalystAgent, the final decision-maker. Synthesize the bull and bear arguments against the user's own trading strategy (from their wiki). Return a structured verdict.
-
-You MUST return valid JSON with these exact keys:
+Return JSON only:
 {
-  "verdict": "BUY|SELL|HOLD",
-  "confidence": 0-100,
+  "catalysts": ["string"],
+  "target_levels": {"key_resistance": 0.0, "breakout_point": 0.0},
+  "thesis_summary": "string"
+}
+"""
+
+BEAR_SYSTEM_PROMPT = """You are BearAgent, an expert risk analyst. Stress-test the bull thesis using ONLY provided data. Identify hidden risks and technical weaknesses.
+
+Return JSON only:
+{
+  "hidden_risks": ["string"],
+  "flawed_assumptions": ["string"],
+  "support_levels": {"key_support": 0.0, "breakdown_point": 0.0},
+  "counter_summary": "string"
+}
+"""
+
+ANALYST_SYSTEM_PROMPT = """You are AnalystAgent, the final compliance decision-maker. Synthesize the Bull and Bear arguments against the Live Strategy Rules provided in the user message. 
+
+Strictly fail the trade (Verdict: HOLD or WAIT) if the trade setup violates any active constraints, such as minimum Risk-to-Reward (R:R) or forbidden setups.
+
+Return JSON only:
+{
+  "verdict": "BUY|SELL|HOLD|WAIT",
+  "confidence": 0,
   "entry_low": 0.0,
   "entry_high": 0.0,
   "exit_target": 0.0,
   "stop_loss": 0.0,
   "rr_ratio": 0.0,
   "timeframe": "Swing (5-12 days)",
-  "summary": "1-2 sentence rationale",
-  "rules_check": "all passed",
+  "summary": "string",
+  "rules_check": "string",
   "confidence_breakdown": {
-    "trend_strength": 0-100,
-    "signal_alignment": 0-100,
-    "volatility_quality": 0-100,
-    "volume_confirm": 0-100,
-    "regime_fit": 0-100,
-    "historical_perf": 0-100
+    "trend_strength": 0,
+    "signal_alignment": 0,
+    "volatility_quality": 0,
+    "volume_confirm": 0,
+    "regime_fit": 0,
+    "historical_perf": 0
   }
 }
+"""
 
-Only output the raw JSON object — no markdown fences, no explanation, no extra text."""
+MOOMOO_SYSTEM_PROMPT = """You are MoomooAnalystAgent. Apply the Moomoo 5-Step Analytical Framework to evaluate the asset against the Live Strategy Rules in the user message.
 
-MOOMOO_SYSTEM_PROMPT = """You are MoomooAnalystAgent. Follow the Moomoo 5-Step Analytical Framework below to produce a comprehensive analysis.
-
-Return ONLY valid JSON with no markdown fences, no explanation, no extra text.
-
-Expected JSON schema:
+Return JSON only:
 {
-  "verdict": "BUY|SELL|HOLD",
-  "confidence": 0-100,
+  "verdict": "BUY|SELL|HOLD|WAIT",
+  "confidence": 0,
   "entry_low": 0.0,
   "entry_high": 0.0,
   "exit_target": 0.0,
   "stop_loss": 0.0,
   "rr_ratio": 0.0,
   "timeframe": "Swing (5-12 days)",
-  "summary": "1-2 sentence rationale",
-  "executive_summary": "1-2 sentence integrated verdict",
+  "summary": "string",
+  "executive_summary": "string",
   "valuation_assessment": {
     "verdict": "undervalued|fair|overvalued",
-    "key_metrics": "summary of P/E, P/B, PEG vs industry",
-    "fair_value_estimate": "estimated fair value range"
+    "key_metrics": "string",
+    "fair_value_estimate": "string"
   },
   "entry_strategy": {
-    "tactical_zone": {"price": 0.0, "reason": ""},
-    "value_zone": {"price": 0.0, "reason": ""},
-    "scale_in_plan": "how to scale in across zones"
+    "tactical_zone": {"price": 0.0, "reason": "string"},
+    "value_zone": {"price": 0.0, "reason": "string"},
+    "scale_in_plan": "string"
   },
   "risk_management": {
     "stop_loss_type": "technical|percentage|fundamental",
-    "position_sizing": "guidance on position size",
+    "position_sizing": "string",
     "margin_of_safety_pct": 0.0
   },
-  "monitoring_catalysts": ["event 1", "event 2"],
+  "monitoring_catalysts": ["string"],
   "moomoo_framework_breakdown": {
-    "step1_objective": "",
-    "step3_fundamental_verdict": "",
-    "step3_valuation_verdict": "",
-    "step3_technical_verdict": "",
-    "step4_synthesis": ""
+    "step1_objective": "string",
+    "step3_fundamental_verdict": "string",
+    "step3_valuation_verdict": "string",
+    "step3_technical_verdict": "string",
+    "step4_synthesis": "string"
   }
-}"""
+}
+"""
 
 
 async def analyze_quick(

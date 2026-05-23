@@ -14,9 +14,9 @@ from log import get_logger
 log = get_logger("llm.client", "LLM")
 
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
-DEFAULT_MODEL = "openrouter/free"
-FAST_MODEL = "openrouter/free"
-ANALYSIS_MODEL = "openrouter/free"
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "openrouter/free")
+FAST_MODEL = os.getenv("FAST_MODEL", "openrouter/free")
+ANALYSIS_MODEL = os.getenv("ANALYSIS_MODEL", "openrouter/free")
 CACHE_TTL_HOURS = 5
 MAX_RETRIES = 5
 RETRY_BASE_WAIT = 15.0
