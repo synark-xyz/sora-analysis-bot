@@ -30,42 +30,39 @@ def _is_us_market_open():
     return market_open <= now_et < market_close
 
 
+_BINANCE_PRICE_SYMBOLS = {
+    "BTC": "BTCUSDT", "ETH": "ETHUSDT", "SOL": "SOLUSDT",
+    "BNB": "BNBUSDT", "AVAX": "AVAXUSDT", "LINK": "LINKUSDT",
+    "DOT": "DOTUSDT", "MATIC": "MATICUSDT", "ADA": "ADAUSDT", "XRP": "XRPUSDT",
+}
+
+
 def _get_current_price(symbol: str, market: str) -> float | None:
+    import os, requests
     try:
         if market == "crypto":
-            _COINGECKO_IDS = {
-                "BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana",
-                "BNB": "binancecoin", "AVAX": "avalanche-2", "LINK": "chainlink",
-                "DOT": "polkadot", "MATIC": "polygon", "ADA": "cardano", "XRP": "ripple",
-            }
-            coin_id = _COINGECKO_IDS.get(symbol.upper())
-            if coin_id:
-                import requests
-                r = requests.get(
-                    "https://api.coingecko.com/api/v3/simple/price",
-                    params={"ids": coin_id, "vs_currencies": "usd"},
-                    timeout=10,
-                )
-                return r.json().get(coin_id, {}).get("usd")
-        else:
-            import os
-            from alpaca.data.historical import StockHistoricalDataClient
-            from alpaca.data.requests import StockLatestQuoteRequest
-            client = StockHistoricalDataClient(
-                os.getenv("ALPACA_API_KEY", ""),
-                os.getenv("ALPACA_SECRET_KEY", ""),
+            pair = _BINANCE_PRICE_SYMBOLS.get(symbol.upper())
+            if not pair:
+                return None
+            r = requests.get(
+                "https://api.binance.com/api/v3/ticker/price",
+                params={"symbol": pair},
+                timeout=10,
             )
-            resp = client.get_stock_latest_quote(StockLatestQuoteRequest(symbol_or_symbols=[symbol]))
-            quote = resp.get(symbol)
-            if quote:
-                ask = getattr(quote, "ask_price", None)
-                bid = getattr(quote, "bid_price", None)
-                if ask and bid:
-                    return (ask + bid) / 2
-                return ask or bid
+            return float(r.json()["price"])
+        else:
+            api_key = os.getenv("FINNHUB_API_KEY", "")
+            if not api_key:
+                return None
+            r = requests.get(
+                "https://finnhub.io/api/v1/quote",
+                params={"symbol": symbol, "token": api_key},
+                timeout=10,
+            )
+            price = r.json().get("c")
+            return float(price) if price else None
     except Exception:
-        pass
-    return None
+        return None
 
 
 class Daemon:
