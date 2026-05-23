@@ -33,7 +33,7 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 symbol TEXT NOT NULL,
                 market TEXT NOT NULL,
-                verdict TEXT NOT NULL CHECK(verdict IN ('BUY', 'SELL', 'HOLD')),
+                verdict TEXT NOT NULL CHECK(verdict IN ('BUY', 'SELL', 'HOLD', 'WAIT')),
                 confidence REAL,
                 entry_low REAL,
                 entry_high REAL,

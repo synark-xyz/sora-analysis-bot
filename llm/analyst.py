@@ -35,34 +35,8 @@ Strictly fail the trade (Verdict: HOLD or WAIT) if the trade setup violates any 
 Return JSON only:
 {
   "verdict": "BUY|SELL|HOLD|WAIT",
-  "confidence": 0,
+  "confidence": 75,  # integer 0-100
   "entry_low": 0.0,
-  "entry_high": 0.0,
-  "exit_target": 0.0,
-  "stop_loss": 0.0,
-  "rr_ratio": 0.0,
-  "timeframe": "Swing (5-12 days)",
-  "summary": "string",
-  "rules_check": "string",
-  "confidence_breakdown": {
-    "trend_strength": 0,
-    "signal_alignment": 0,
-    "volatility_quality": 0,
-    "volume_confirm": 0,
-    "regime_fit": 0,
-    "historical_perf": 0
-  }
-}
-"""
-
-MOOMOO_SYSTEM_PROMPT = """You are MoomooAnalystAgent. Apply the Moomoo 5-Step Analytical Framework to evaluate the asset against the Live Strategy Rules in the user message.
-
-Return JSON only:
-{
-  "verdict": "BUY|SELL|HOLD|WAIT",
-  "confidence": 0,
-  "entry_low": 0.0,
-  "entry_high": 0.0,
   "exit_target": 0.0,
   "stop_loss": 0.0,
   "rr_ratio": 0.0,

@@ -146,7 +146,7 @@ class Daemon:
             for sym in us_symbols:
                 try:
                     signal = await asyncio.to_thread(run_pipeline, sym, "us", "swing")
-                    if signal and signal.get("verdict") != "HOLD" and signal.get("gate_passed"):
+                    if signal and signal.get("verdict") not in ("HOLD", "WAIT") and signal.get("gate_passed"):
                         if signal.get("verdict") == "BUY":
                             price = await asyncio.to_thread(_get_current_price, sym, "us")
                             if price:
@@ -193,7 +193,7 @@ class Daemon:
             for sym in crypto_symbols:
                 try:
                     signal = await asyncio.to_thread(run_pipeline, sym, "crypto", "swing")
-                    if signal and signal.get("verdict") != "HOLD" and signal.get("gate_passed"):
+                    if signal and signal.get("verdict") not in ("HOLD", "WAIT") and signal.get("gate_passed"):
                         if signal.get("verdict") == "BUY":
                             price = await asyncio.to_thread(_get_current_price, sym, "crypto")
                             if price:

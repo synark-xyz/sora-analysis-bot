@@ -62,8 +62,8 @@ def check_gate(
     symbol: str,
     market: str = "us",
 ) -> GateResult:
-    if verdict == "HOLD":
-        return GateResult(passed=True, fail_reason="HOLD — gate skipped")
+    if verdict in ("HOLD", "WAIT"):
+        return GateResult(passed=True, fail_reason="HOLD/WAIT — gate skipped")
 
     checks = []
 
