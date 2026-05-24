@@ -729,6 +729,27 @@ async def _run_full_analysis(symbol: str, market: str) -> dict:
         except Exception:
             pass
 
+        # ── Market breadth context ─────────────────────────────────────────
+        breadth_context = ""
+        if market == "us":
+            try:
+                from analysis.breadth import get_market_breadth, breadth_context_str
+                breadth = get_market_breadth()
+                breadth_context = breadth_context_str(breadth)
+            except Exception:
+                pass
+        # ── end breadth ────────────────────────────────────────────────────
+
+        # ── Historical signal injection ────────────────────────────────────
+        signal_history = ""
+        try:
+            from db.store import get_recent_signals_for_symbol, format_signal_history
+            past = get_recent_signals_for_symbol(symbol, limit=5)
+            signal_history = format_signal_history(past)
+        except Exception:
+            pass
+        # ── end history ────────────────────────────────────────────────────
+
         return await analyze_full(
             symbol=symbol,
             indicators=indicators,
@@ -736,6 +757,8 @@ async def _run_full_analysis(symbol: str, market: str) -> dict:
             news=news,
             fundamentals=fundamentals,
             wiki_context=wiki_context,
+            signal_history=signal_history,
+            breadth_context=breadth_context,
         )
     except ImportError:
         return {}

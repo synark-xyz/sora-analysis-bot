@@ -352,3 +352,108 @@ def cache_llm_set(input_hash, model, output):
         conn.commit()
     finally:
         conn.close()
+
+
+def get_recent_signals_for_symbol(symbol: str, limit: int = 5) -> list[dict]:
+    """
+    Return the N most recent signals for a symbol, including outcome data.
+    Joins signals with signal_outcomes to get return_3d, return_7d.
+    """
+    conn = _get_conn()
+    conn.row_factory = _dict_from_row
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT s.id, s.symbol, s.verdict, s.confidence, s.created_at,
+               o.actual_return_3d AS return_3d, o.actual_return_7d AS return_7d,
+               o.actual_return_14d AS return_14d
+        FROM signals s
+        LEFT JOIN signal_outcomes o ON o.signal_id = s.id
+        WHERE s.symbol = ?
+        ORDER BY s.created_at DESC
+        LIMIT ?
+        """,
+        (symbol.upper(), limit),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def format_signal_history(signals: list[dict]) -> str:
+    """
+    Format a list of signal dicts (from get_recent_signals_for_symbol)
+    into a compact LLM-readable string.
+    Example output:
+      Past signals for AAPL:
+        BUY (conf=80) 2026-05-20 → 3d: +8.2%, 7d: +12.1%
+        BUY (conf=75) 2026-05-10 → 3d: -4.1%, 7d: pending
+    """
+    if not signals:
+        return "No prior signals recorded for this symbol."
+
+    lines = [f"Past {len(signals)} signal(s):"]
+    wins = 0
+    total_with_outcome = 0
+
+    for s in signals:
+        verdict = s.get("verdict", "?")
+        conf = s.get("confidence", "?")
+        date = str(s.get("created_at", ""))[:10]
+        r3 = s.get("return_3d")
+        r7 = s.get("return_7d")
+
+        r3_str = f"+{r3:.1f}%" if r3 and r3 > 0 else (f"{r3:.1f}%" if r3 is not None else "pending")
+        r7_str = f"+{r7:.1f}%" if r7 and r7 > 0 else (f"{r7:.1f}%" if r7 is not None else "pending")
+
+        if r3 is not None:
+            total_with_outcome += 1
+            if r3 > 0:
+                wins += 1
+
+        lines.append(f"  {verdict} (conf={conf}) {date} → 3d: {r3_str}, 7d: {r7_str}")
+
+    if total_with_outcome > 0:
+        win_rate = int(wins / total_with_outcome * 100)
+        lines.append(f"Win rate (3d): {wins}/{total_with_outcome} = {win_rate}%")
+
+    return "\n".join(lines)
+
+
+def get_signal_win_rate(symbol: str, verdict: str = "BUY", min_samples: int = 3) -> dict | None:
+    """
+    Return win rate dict for a symbol+verdict if >= min_samples exist with outcomes.
+    Returns None if insufficient data.
+    {
+      "win_rate": 67,       # int, 0-100
+      "sample_size": 6,     # int
+      "avg_return_3d": 4.2, # float
+    }
+    """
+    conn = _get_conn()
+    conn.row_factory = _dict_from_row
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT o.actual_return_3d AS return_3d
+        FROM signals s
+        JOIN signal_outcomes o ON o.signal_id = s.id
+        WHERE s.symbol = ? AND s.verdict = ? AND o.actual_return_3d IS NOT NULL
+        ORDER BY s.created_at DESC
+        LIMIT 20
+        """,
+        (symbol.upper(), verdict.upper()),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    if len(rows) < min_samples:
+        return None
+
+    returns = [r["return_3d"] for r in rows]
+    wins = sum(1 for r in returns if r > 0)
+    return {
+        "win_rate": int(wins / len(returns) * 100),
+        "sample_size": len(returns),
+        "avg_return_3d": round(sum(returns) / len(returns), 2),
+    }

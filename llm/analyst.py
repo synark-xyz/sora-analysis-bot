@@ -99,6 +99,8 @@ async def analyze_full(
     news: str,
     fundamentals: str,
     wiki_context: str = "",
+    signal_history: str = "",
+    breadth_context: str = "",
     llm: Optional[LLMClient] = None,
 ) -> dict:
     llm = llm or LLMClient(model=ANALYSIS_MODEL)
@@ -110,7 +112,9 @@ Symbol: {symbol}
 Indicators: {indicators}
 Regime: {regime}
 News: {news}
-Fundamentals: {fundamentals}"""
+Fundamentals: {fundamentals}
+{f"Market Breadth: {breadth_context}" if breadth_context else ""}
+{f"Signal History:\n{signal_history}" if signal_history else ""}"""
 
     bull_messages = [
         {"role": "system", "content": BULL_SYSTEM_PROMPT},

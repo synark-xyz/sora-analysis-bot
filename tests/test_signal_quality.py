@@ -63,3 +63,47 @@ def test_volume_signal_neutral_on_normal():
     bars = _make_bars(60, volume=1_000_000)
     ind = _compute_indicators("AAPL", bars)
     assert ind["volume_signal"] == "neutral"
+
+# ── Task 5: Historical signal injection ───────────────────────────────────────
+
+def test_get_recent_signals_for_symbol_returns_list():
+    """get_recent_signals_for_symbol returns list of dicts with required keys."""
+    import db.store as store
+    import tempfile, os
+    # Use temp DB
+    orig = store.DB_PATH
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        tmp_path = f.name
+    store.DB_PATH = tmp_path
+    try:
+        store.init_db()
+        # Save a test signal
+        store.save_signal({
+            "symbol": "AAPL", "verdict": "BUY", "confidence": 80,
+            "entry_low": 150.0, "entry_high": 152.0,
+            "exit_target": 160.0, "stop_loss": 146.0,
+            "rr_ratio": 2.0, "strategy": "test", "regime": "BULL",
+            "reason": "test", "summary": "test signal",
+        })
+        results = store.get_recent_signals_for_symbol("AAPL", limit=5)
+        assert isinstance(results, list)
+        assert len(results) == 1
+        assert results[0]["verdict"] == "BUY"
+    finally:
+        store.DB_PATH = orig
+        os.unlink(tmp_path)
+
+
+def test_format_signal_history_string():
+    """format_signal_history returns a formatted string from signal list."""
+    from db.store import format_signal_history
+    signals = [
+        {"verdict": "BUY", "confidence": 80, "created_at": "2026-05-20T10:00:00Z",
+         "return_3d": 8.2, "return_7d": 12.1},
+        {"verdict": "BUY", "confidence": 75, "created_at": "2026-05-10T10:00:00Z",
+         "return_3d": -4.1, "return_7d": None},
+    ]
+    result = format_signal_history(signals)
+    assert "BUY" in result
+    assert "8.2%" in result
+    assert "-4.1%" in result
