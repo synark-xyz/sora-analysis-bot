@@ -170,6 +170,21 @@ def _compute_indicators(symbol: str, bars: list[dict]) -> dict:
     ) if len(volumes) >= 6 else 1.0
 
     indicators["avg_volume"] = sum(volumes[-21:]) / min(len(volumes), 21) if volumes else 0
+
+    # 21-day volume confirmation (more robust than 5-bar ratio)
+    avg_vol_21 = indicators["avg_volume"]
+    indicators["vol_ratio_21d"] = round(
+        volumes[-1] / avg_vol_21, 2
+    ) if avg_vol_21 > 0 else 1.0
+
+    _vr = indicators["vol_ratio_21d"]
+    if _vr >= 1.5:
+        indicators["volume_signal"] = "strong"
+    elif _vr <= 0.6:
+        indicators["volume_signal"] = "weak"
+    else:
+        indicators["volume_signal"] = "neutral"
+
     indicators["adx"] = _adx(highs, lows, closes)
 
     trend = _calc_trend(closes)
@@ -676,6 +691,21 @@ async def _run_full_analysis(symbol: str, market: str) -> dict:
             return {}
         indicators = _compute_indicators(symbol, bars)
         regime = detect_regime()
+
+        # ── R:R Pre-Gate: skip LLM on untradeable setups ──────────────────
+        _price = indicators.get("price", 0)
+        _atr = indicators.get("atr_14", 0)
+        if _price > 0 and _atr > 0:
+            _atr_pct = _atr / _price
+            if _atr_pct < 0.003:  # < 0.3% daily range = flatline, no R:R possible
+                return {
+                    "symbol": symbol,
+                    "verdict": "HOLD",
+                    "reason": "LOW_ATR_PREGATE",
+                    "confidence": 0,
+                    "summary": f"ATR/price={_atr_pct:.4f} below minimum 0.3% — no tradeable setup.",
+                }
+        # ── end pre-gate ───────────────────────────────────────────────────
 
         news = ""
         try:
