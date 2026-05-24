@@ -131,18 +131,57 @@ Fundamentals: {fundamentals}
         {"role": "system", "content": BEAR_SYSTEM_PROMPT},
         {
             "role": "user",
-            "content": f"Stress-test this bull thesis for {symbol}.\n\n{market_data}\n\nBull thesis: {bull_result.get('bull_thesis', '')}\n\nReturn JSON: {{ \"bear_thesis\": \"...\", \"bear_confidence\": 0-100, \"key_risks\": [\"...\"] }}",
+            "content": (
+                f"Stress-test this bull thesis for {symbol}.\n\n{market_data}\n\n"
+                f"Bull thesis: {bull_result.get('bull_thesis', '')}\n\n"
+                f"Return JSON: {{ "
+                f"\"bear_thesis\": \"...\", "
+                f"\"bear_confidence\": 0-100, "
+                f"\"key_risks\": [\"...\"], "
+                f"\"bear_score_of_bull\": 0-100 "
+                f"}}"
+            ),
         },
     ]
     bear_result = await bear_llm.complete_json(
         bear_messages, temperature=0.3, max_tokens=2048, use_cache=True
     )
 
+    # ── Debate scoring: inject bear assessment of bull thesis ──────────────
+    bear_score_of_bull = bear_result.get("bear_score_of_bull", 50)
+    debate_note = ""
+    if isinstance(bear_score_of_bull, (int, float)):
+        if bear_score_of_bull < 40:
+            debate_note = (
+                f"\n\n⚠️ DEBATE SCORE: BearAgent rated the bull thesis only {bear_score_of_bull}/100. "
+                f"Bear strongly discredits bull case. Weight bear risks heavily in synthesis. "
+                f"Lean toward HOLD or WAIT unless fundamental catalyst is exceptional."
+            )
+        elif bear_score_of_bull > 70:
+            debate_note = (
+                f"\n\nDEBATE SCORE: BearAgent rated bull thesis {bear_score_of_bull}/100 — "
+                f"bear concedes bull case is credible. Standard synthesis applies."
+            )
+    # ── end debate ─────────────────────────────────────────────────────────
+
     synthesis_messages = [
         {"role": "system", "content": ANALYST_SYSTEM_PROMPT},
         {
             "role": "user",
-            "content": f"Synthesize the bull vs bear debate for {symbol}.\n\nIndicators: {indicators}\nRegime: {regime}\nNews: {news}\nFundamentals: {fundamentals}\n\nBull case: {bull_result.get('bull_thesis', '')}\nBull confidence: {bull_result.get('bull_confidence', 'N/A')}\nCatalysts: {bull_result.get('key_catalysts', [])}\n\nBear case: {bear_result.get('bear_thesis', '')}\nBear confidence: {bear_result.get('bear_confidence', 'N/A')}\nRisks: {bear_result.get('key_risks', [])}\n\nUser wiki context:\n{wiki_context}",
+            "content": (
+                f"Synthesize the bull vs bear debate for {symbol}.\n\n"
+                f"Indicators: {indicators}\nRegime: {regime}\nNews: {news}\nFundamentals: {fundamentals}\n"
+                f"Market Breadth: {breadth_context}\n\n"
+                f"Bull case: {bull_result.get('bull_thesis', '')}\n"
+                f"Bull confidence: {bull_result.get('bull_confidence', 'N/A')}\n"
+                f"Catalysts: {bull_result.get('key_catalysts', [])}\n\n"
+                f"Bear case: {bear_result.get('bear_thesis', '')}\n"
+                f"Bear confidence: {bear_result.get('bear_confidence', 'N/A')}\n"
+                f"Risks: {bear_result.get('key_risks', [])}\n"
+                f"{debate_note}\n\n"
+                f"User wiki context:\n{wiki_context}\n\n"
+                f"Signal history:\n{signal_history}"
+            ),
         },
     ]
     synthesis = await llm.complete_json(

@@ -142,3 +142,45 @@ async def test_earnings_high_risk_forces_wait():
     assert len(captured_messages) == 1
     all_context = str(captured_messages[0])
     assert "earnings" in all_context.lower() or "HIGH" in all_context
+
+# ── Task 7: Bull/Bear debate scoring ──────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_debate_scoring_injects_bear_warning_on_low_bull_score():
+    """
+    When bear scores bull < 40, synthesis messages must contain bear warning text.
+    """
+    from llm.analyst import analyze_full
+    from llm.client import LLMClient
+
+    call_log = []
+
+    async def mock_complete_json(messages, **kwargs):
+        call_log.append(messages)
+        # Bull call
+        if any("BullAgent" in str(m) for m in messages):
+            return {"bull_thesis": "Strong breakout above resistance.", "bull_confidence": 80, "key_catalysts": ["momentum"]}
+        # Bear call (includes debate score request)
+        if any("BearAgent" in str(m) for m in messages):
+            return {"bear_thesis": "Overextended, no volume.", "bear_confidence": 70, "key_risks": ["overbought"],
+                    "bear_score_of_bull": 30}
+        # Synthesis call
+        return {"verdict": "HOLD", "confidence": 55, "summary": "Mixed signals."}
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.complete_json = mock_complete_json
+
+    with patch("llm.analyst.LLMClient", return_value=mock_llm):
+        await analyze_full(
+            symbol="AAPL",
+            indicators={"price": 150, "rsi_14": 72},
+            regime={"regime": "BULL", "adx": 28},
+            news="Stock up 5%",
+            fundamentals="P/E: 28",
+        )
+
+    # The synthesis call (last in call_log) should contain the bear warning
+    synthesis_messages = call_log[-1]
+    synthesis_content = " ".join(str(m) for m in synthesis_messages)
+    assert "bear" in synthesis_content.lower()
+    assert "30" in synthesis_content or "weak" in synthesis_content.lower()
