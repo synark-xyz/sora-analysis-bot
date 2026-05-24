@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sora Trading Bot v2 — AI Trading Signal Agent</title>
+<meta name="description" content="Personal-use Telegram-based AI trading signal agent for US equities and cryptocurrency. Entry/exit zone signals with full reasoning through multi-agent LLM debate.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0a0a0f;--bg2:#111118;--bg3:#1a1a28;--surface:#1e1e2e;--surface2:#252538;--gold:#f0b90b;--gold-dim:#b8890a;--cyan:#00d4aa;--cyan-dim:#009e7e;--red:#ff4757;--green:#2ed573;--text:#e8e8f0;--text2:#9090a8;--text3:#606078;--border:#2a2a40;--radius:12px;--radius-sm:8px}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);color:var(--text);line-height:1.7;overflow-x:hidden}
+a{color:var(--cyan);text-decoration:none;transition:color .3s}
+a:hover{color:var(--gold)}
+
+/* Nav */
+nav{position:fixed;top:0;left:0;right:0;z-index:1000;background:rgba(10,10,15,.85);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid var(--border);transition:all .3s}
+nav.scrolled{background:rgba(10,10,15,.95)}
+.nav-inner{max-width:1200px;margin:0 auto;padding:0 24px;display:flex;align-items:center;height:60px;gap:8px;overflow-x:auto}
+.nav-inner::-webkit-scrollbar{height:2px}
+.nav-inner::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.nav-logo{font-weight:700;font-size:15px;color:var(--gold);white-space:nowrap;margin-right:16px;flex-shrink:0}
+.nav-logo i{color:var(--cyan);margin-right:6px}
+.nav-link{font-size:13px;color:var(--text2);white-space:nowrap;padding:6px 12px;border-radius:6px;transition:all .3s;flex-shrink:0}
+.nav-link:hover,.nav-link.active{color:var(--text);background:var(--surface)}
+.nav-link.active{color:var(--gold)}
+
+/* Hero */
+.hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:120px 24px 80px;position:relative;overflow:hidden}
+.hero-particles{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+.hero-particle{position:absolute;width:4px;height:4px;background:var(--gold);border-radius:50%;opacity:0;animation:float 8s infinite}
+.hero-particle:nth-child(1){left:10%;top:20%;animation-delay:0s;width:3px;height:3px}
+.hero-particle:nth-child(2){left:25%;top:60%;animation-delay:1.2s;width:5px;height:5px;background:var(--cyan)}
+.hero-particle:nth-child(3){left:45%;top:30%;animation-delay:2.5s;width:3px;height:3px}
+.hero-particle:nth-child(4){left:65%;top:70%;animation-delay:0.8s;width:6px;height:6px;background:var(--cyan)}
+.hero-particle:nth-child(5){left:80%;top:40%;animation-delay:3.2s;width:4px;height:4px}
+.hero-particle:nth-child(6){left:15%;top:85%;animation-delay:1.8s;width:5px;height:5px;background:var(--gold)}
+.hero-particle:nth-child(7){left:55%;top:15%;animation-delay:4s;width:3px;height:3px}
+.hero-particle:nth-child(8){left:90%;top:80%;animation-delay:2s;width:4px;height:4px;background:var(--cyan)}
+.hero-particle:nth-child(9){left:35%;top:50%;animation-delay:3.5s;width:5px;height:5px}
+.hero-particle:nth-child(10){left:75%;top:25%;animation-delay:1.5s;width:3px;height:3px;background:var(--gold)}
+@keyframes float{0%{opacity:0;transform:translateY(0) scale(0)}20%{opacity:.6}80%{opacity:.4}100%{opacity:0;transform:translateY(-120px) scale(1)}}
+.hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 60% 50% at 50% 40%, rgba(240,185,11,.06) 0%, transparent 70%),radial-gradient(ellipse 40% 40% at 30% 60%, rgba(0,212,170,.04) 0%, transparent 60%);pointer-events:none}
+.hero-badge{display:inline-flex;align-items:center;gap:8px;padding:8px 20px;border:1px solid var(--border);border-radius:100px;font-size:13px;color:var(--text2);margin-bottom:32px;background:var(--surface)}
+.hero-badge i{color:var(--gold)}
+.hero h1{font-size:clamp(2.5rem,7vw,5rem);font-weight:800;line-height:1.1;margin-bottom:20px;letter-spacing:-.03em}
+.hero h1 .gradient{background:linear-gradient(135deg,var(--gold) 0%,var(--cyan) 50%,var(--gold) 100%);background-size:200% 200%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;animation:gradientShift 4s ease infinite}
+@keyframes gradientShift{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+.hero-sub{font-size:clamp(1rem,2vw,1.2rem);color:var(--text2);max-width:700px;margin:0 auto 40px;line-height:1.7}
+.hero-actions{display:flex;gap:16px;flex-wrap:wrap;justify-content:center}
+.hero-btn{display:inline-flex;align-items:center;gap:8px;padding:14px 32px;border-radius:var(--radius-sm);font-size:15px;font-weight:600;transition:all .3s;cursor:pointer}
+.hero-btn.primary{background:linear-gradient(135deg,var(--gold),var(--gold-dim));color:var(--bg);border:none}
+.hero-btn.primary:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(240,185,11,.3)}
+.hero-btn.secondary{background:transparent;border:1px solid var(--border);color:var(--text)}
+.hero-btn.secondary:hover{border-color:var(--cyan);color:var(--cyan);transform:translateY(-2px)}
+.hero-stats{display:flex;gap:48px;margin-top:64px;flex-wrap:wrap;justify-content:center}
+.hero-stat{text-align:center}
+.hero-stat-num{font-size:2rem;font-weight:800;color:var(--gold);font-variant-numeric:tabular-nums}
+.hero-stat-label{font-size:13px;color:var(--text3);margin-top:4px}
+.hero-stat-num.cyan{color:var(--cyan)}
+
+/* Content */
+.content{max-width:960px;margin:0 auto;padding:0 24px 80px}
+
+section{margin-bottom:80px;opacity:0;transform:translateY(30px);transition:all .7s cubic-bezier(.22,1,.36,1)}
+section.visible{opacity:1;transform:translateY(0)}
+
+.section-header{display:flex;align-items:center;gap:14px;margin-bottom:32px;padding-bottom:16px;border-bottom:1px solid var(--border)}
+.section-header i{font-size:20px;color:var(--gold);width:40px;height:40px;display:flex;align-items:center;justify-content:center;background:var(--surface);border-radius:var(--radius-sm);flex-shrink:0}
+.section-header h2{font-size:1.6rem;font-weight:700;letter-spacing:-.02em}
+.section-header .accent-line{flex:1;height:1px;background:linear-gradient(90deg,var(--border),transparent)}
+.section-header h2 .highlight{color:var(--gold)}
+
+.lead-text{font-size:1.05rem;color:var(--text2);margin-bottom:28px;line-height:1.8;max-width:800px}
+
+/* Feature Grid */
+.feature-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
+.feature-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;transition:all .3s}
+.feature-card:hover{border-color:var(--gold);transform:translateY(-4px);box-shadow:0 12px 40px rgba(240,185,11,.08)}
+.feature-card-alt:hover{border-color:var(--cyan);box-shadow:0 12px 40px rgba(0,212,170,.08)}
+.feature-card-icon{width:40px;height:40px;display:flex;align-items:center;justify-content:center;background:var(--bg2);border-radius:var(--radius-sm);margin-bottom:14px;color:var(--gold);font-size:16px}
+.feature-card-alt .feature-card-icon{color:var(--cyan)}
+.feature-card h3{font-size:15px;font-weight:600;margin-bottom:8px}
+.feature-card p,.feature-card li{font-size:13px;color:var(--text2);line-height:1.6}
+.feature-card ul{list-style:none;padding:0}
+.feature-card ul li{padding:2px 0;padding-left:16px;position:relative}
+.feature-card ul li::before{content:'\25B8';position:absolute;left:0;color:var(--gold);font-size:12px}
+
+/* Tables */
+.table-wrap{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+thead{background:var(--surface)}
+th{text-align:left;padding:14px 16px;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);border-bottom:1px solid var(--border)}
+td{padding:12px 16px;border-bottom:1px solid var(--border);color:var(--text2)}
+tr:last-child td{border-bottom:none}
+tbody tr{transition:background .2s;background:var(--bg2)}
+tbody tr:nth-child(even){background:var(--surface)}
+tbody tr:hover{background:var(--surface2)}
+td code{font-family:'JetBrains Mono',monospace;font-size:12px;background:var(--bg);padding:2px 8px;border-radius:4px;color:var(--cyan)}
+th code{font-family:'JetBrains Mono',monospace;font-size:11px}
+
+/* Code blocks */
+.code-block{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:20px 24px;overflow-x:auto;margin:16px 0;position:relative}
+.code-block code{font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:var(--text);white-space:pre}
+.code-block .kw{color:#bd93f9}
+.code-block .fn{color:#50fa7b}
+.code-block .str{color:#f1fa8c}
+.code-block .cm{color:#6272a4}
+.code-block .num{color:#bd93f9}
+.code-block .op{color:#ff79c6}
+
+/* Mermaid */
+.mermaid-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:32px 16px;overflow-x:auto;margin:20px 0;text-align:center}
+.mermaid-wrap svg{max-width:100%;height:auto}
+
+/* Feature List (non-card) */
+.feature-list{list-style:none;padding:0}
+.feature-list>li{padding:10px 0;padding-left:24px;position:relative;color:var(--text2);line-height:1.6;font-size:14px;border-bottom:1px solid rgba(42,42,64,.5)}
+.feature-list>li:last-child{border-bottom:none}
+.feature-list>li::before{content:'\2713';position:absolute;left:0;color:var(--cyan);font-weight:700}
+.feature-list strong{color:var(--text)}
+
+/* Subsection */
+.subsection{margin-bottom:24px}
+.subsection h3{font-size:1rem;font-weight:600;color:var(--gold);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.subsection h3 i{font-size:14px}
+
+/* Dir tree */
+.dir-tree{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7;overflow-x:auto}
+.dir-tree .cm{color:#6272a4}
+.dir-tree .hl{color:var(--gold)}
+
+/* Inline code */
+p code,li code{font-family:'JetBrains Mono',monospace;font-size:13px;background:var(--surface);padding:2px 8px;border-radius:4px;color:var(--cyan)}
+
+/* Command groups */
+.cmd-group{margin-bottom:20px}
+.cmd-group h4{font-size:14px;font-weight:600;color:var(--text);margin-bottom:10px;padding-left:4px}
+
+/* Prose blocks */
+.prose{font-size:15px;color:var(--text2);line-height:1.8}
+.prose p{margin-bottom:16px}
+.prose strong{color:var(--text)}
+.prose ul,.prose ol{padding-left:24px;margin-bottom:16px}
+.prose li{margin-bottom:6px}
+
+/* Footer */
+footer{border-top:1px solid var(--border);padding:48px 24px;text-align:center;color:var(--text3);font-size:14px}
+footer a{color:var(--gold)}
+footer a:hover{color:var(--cyan)}
+footer .footer-links{display:flex;gap:24px;justify-content:center;margin-bottom:20px;flex-wrap:wrap}
+
+/* Tree content */
+.tree-file{color:var(--text2)}
+.tree-cm{color:#6272a4;font-style:italic}
+
+/* Responsive */
+@media(max-width:768px){
+  .hero{padding:100px 20px 60px}
+  .hero-stats{gap:24px}
+  .feature-grid{grid-template-columns:1fr}
+  .nav-inner{flex-wrap:nowrap}
+  .section-header h2{font-size:1.3rem}
+  table{font-size:13px}
+  th,td{padding:10px 12px}
+  .hero-stat-num{font-size:1.5rem}
+}
+@media(max-width:480px){
+  .hero-actions{flex-direction:column;align-items:stretch}
+  .hero-btn{justify-content:center}
+}
+
+/* Scroll reveal */
+.reveal{opacity:0;transform:translateY(30px);transition:all .7s cubic-bezier(.22,1,.36,1)}
+.reveal.visible{opacity:1;transform:translateY(0)}
+
+/* Note block */
+.note{background:var(--surface);border-left:3px solid var(--gold);padding:16px 20px;border-radius:0 var(--radius-sm) var(--radius-sm) 0;margin:16px 0;font-size:14px;color:var(--text2)}
+.note i{color:var(--gold);margin-right:8px}
+</style>
+</head>
+<body>
+
+<nav id="navbar">
+  <div class="nav-inner">
+    <span class="nav-logo"><i class="fas fa-robot"></i> Sora Bot</span>
+    <a href="#overview" class="nav-link active">Overview</a>
+    <a href="#features" class="nav-link">Features</a>
+    <a href="#architecture" class="nav-link">Architecture</a>
+    <a href="#tech-stack" class="nav-link">Tech Stack</a>
+    <a href="#structure" class="nav-link">Structure</a>
+    <a href="#strategy" class="nav-link">Strategies</a>
+    <a href="#scheduler" class="nav-link">Scheduler</a>
+    <a href="#memory" class="nav-link">Memory</a>
+    <a href="#database" class="nav-link">Database</a>
+    <a href="#setup" class="nav-link">Setup</a>
+    <a href="#commands" class="nav-link">Commands</a>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="hero-particles">
+    <div class="hero-particle"></div><div class="hero-particle"></div>
+    <div class="hero-particle"></div><div class="hero-particle"></div>
+    <div class="hero-particle"></div><div class="hero-particle"></div>
+    <div class="hero-particle"></div><div class="hero-particle"></div>
+    <div class="hero-particle"></div><div class="hero-particle"></div>
+  </div>
+  <div class="hero-badge"><i class="fas fa-bolt"></i> v2 &middot; Personal-Use &middot; AI-Powered</div>
+  <h1><span class="gradient">Sora Trading Bot</span></h1>
+  <p class="hero-sub">Personal-use Telegram-based AI trading signal agent for US equities and cryptocurrency. Provides entry/exit zone signals with full reasoning through a deterministic technical pipeline augmented by multi-agent LLM debate. No user interface, no trading execution &mdash; signals only.</p>
+  <div class="hero-actions">
+    <a href="#setup" class="hero-btn primary"><i class="fas fa-rocket"></i> Get Started</a>
+    <a href="#overview" class="hero-btn secondary"><i class="fas fa-book"></i> Read the Docs</a>
+  </div>
+  <div class="hero-stats">
+    <div class="hero-stat"><div class="hero-stat-num" data-count="5">0</div><div class="hero-stat-label">Strategies</div></div>
+    <div class="hero-stat"><div class="hero-stat-num cyan" data-count="8">0</div><div class="hero-stat-label">Gate Rules</div></div>
+    <div class="hero-stat"><div class="hero-stat-num" data-count="7">0</div><div class="hero-stat-label">Confidence Dimensions</div></div>
+    <div class="hero-stat"><div class="hero-stat-num cyan" data-count="20">0</div><div class="hero-stat-label">Telegram Commands</div></div>
+    <div class="hero-stat"><div class="hero-stat-num" data-count="3">0</div><div class="hero-stat-label">LLM Agents</div></div>
+  </div>
+</section>
+
+<div class="content">
+
+<!-- Overview -->
+<section id="overview" class="reveal">
+  <div class="section-header">
+    <i class="fas fa-info-circle"></i>
+    <h2>Overview</h2>
+    <span class="accent-line"></span>
+  </div>
+  <div class="prose">
+    <p>Sora is an automated trading signal generator that runs as a single asyncio Python process. It combines a deterministic technical analysis engine with a multi-agent LLM debate system to produce high-quality trading signals for US equities (via Alpaca) and cryptocurrencies (via Binance/CoinGecko).</p>
+    <p>The system operates on a simple principle: <strong>trade less, trade higher quality</strong>. Every signal passes through multiple quality gates &mdash; technical indicators, market regime detection, confidence scoring, confluence validation, and a hard signal gate &mdash; before being delivered via Telegram.</p>
+    <p><strong>Key architectural decisions:</strong></p>
+    <ul>
+      <li>Single-process asyncio design with no external message broker or task queue</li>
+      <li>SQLite for persistence (no database server required)</li>
+      <li>All confidence scores are deterministic and explainable</li>
+      <li>LLM is used as an augmentation layer, not the core decision-maker</li>
+      <li>Resilient to data source failures (graceful fallbacks throughout)</li>
+    </ul>
+  </div>
+</section>
+
+<!-- Features -->
+<section id="features" class="reveal">
+  <div class="section-header">
+    <i class="fas fa-star"></i>
+    <h2>Features</h2>
+    <span class="accent-line"></span>
+  </div>
+
+  <div class="subsection">
+    <h3><i class="fas fa-globe"></i> Multi-Market Coverage</h3>
+    <ul class="feature-list">
+      <li><strong>US equities:</strong> NASDAQ/NYSE symbols via Alpaca Markets API (daily OHLCV bars)</li>
+      <li><strong>Cryptocurrency:</strong> BTC, ETH, SOL, BNB, AVAX, LINK, DOT, MATIC, ADA, XRP via Binance public API (no key required)</li>
+      <li><strong>Market regime detection</strong> using SPY (equities) or BTC (crypto) as proxies</li>
+    </ul>
+  </div>
+
+  <div class="subsection">
+    <h3><i class="fas fa-chart-line"></i> Five Built-in Trading Strategies</h3>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Strategy</th><th>Category</th><th>Difficulty</th><th>Regimes</th><th>Risk</th></tr></thead>
+      <tbody>
+        <tr><td>EMA + RSI + Volume</td><td>Trend</td><td>Easy</td><td>BULL, NEUTRAL</td><td>6%/12%</td></tr>
+        <tr><td>Supertrend + MACD</td><td>Trend</td><td>Medium</td><td>BULL, VOLATILE, NEUTRAL</td><td>5%/10%</td></tr>
+        <tr><td>Bollinger Squeeze</td><td>Breakout</td><td>Medium</td><td>BULL, VOLATILE, RANGING</td><td>7%/14%</td></tr>
+        <tr><td>RSI Mean Reversion</td><td>Mean Reversion</td><td>Easy</td><td>RANGING, VOLATILE, NEUTRAL</td><td>4%/7%</td></tr>
+        <tr><td>VWAP Momentum</td><td>Intraday</td><td>Advanced</td><td>BULL, NEUTRAL, VOLATILE</td><td>5%/10%</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="feature-grid">
+    <div class="feature-card">
+      <div class="feature-card-icon"><i class="fas fa-sliders-h"></i></div>
+      <h3>Deterministic Confidence Scoring</h3>
+      <p>Seven explainable dimensions weighted to produce a 0-100 score:</p>
+      <ul>
+        <li>Trend strength (ADX, EMA alignment)</li>
+        <li>Signal alignment (RSI, MACD, Bollinger Bands)</li>
+        <li>Volatility quality (ATR % of price, vol vs historical)</li>
+        <li>Volume confirmation (volume ratio, vol trend)</li>
+        <li>Market regime fit (strategy compatibility)</li>
+        <li>Historical performance (win rate, Sharpe ratio)</li>
+        <li>Drawdown state (current vs max drawdown)</li>
+      </ul>
+    </div>
+
+    <div class="feature-card feature-card-alt">
+      <div class="feature-card-icon"><i class="fas fa-wave-square"></i></div>
+      <h3>Market Regime Detection</h3>
+      <p>Classifies market as BULL, BEAR, NEUTRAL, RANGING, or VOLATILE using ADX, trend slope, and volatility relative to historical baseline. Each regime influences which strategies are eligible and how confidence is calculated.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-icon"><i class="fas fa-check-double"></i></div>
+      <h3>Confluence Validation</h3>
+      <p>Before accepting any signal, validates that technical factors agree: ADX strength, EMA alignment with signal direction, RSI consistency, volume confirmation, and regime compatibility. Alignment ratio must be &gt;= 50%.</p>
+    </div>
+
+    <div class="feature-card feature-card-alt">
+      <div class="feature-card-icon"><i class="fas fa-shield-alt"></i></div>
+      <h3>Signal Gate (Pre-Notification Filter)</h3>
+      <p>Eight hard rules that any BUY/SELL signal must pass before delivery:</p>
+      <ul>
+        <li>Mandatory: R:R &gt;= 1.5:1, entry zone active</li>
+        <li>Scorecard: confidence floor (70/75), RSI max for longs, volume confirmation, post-catalyst cooldown (7 days), stop-loss sanity</li>
+        <li>Allows 1 failure out of 5 scorecard checks</li>
+      </ul>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-icon"><i class="fas fa-users"></i></div>
+      <h3>Multi-Agent LLM Analysis</h3>
+      <ul>
+        <li>Bull Agent: builds the strongest bullish case</li>
+        <li>Bear Agent: stress-tests the bull thesis, identifies hidden risks</li>
+        <li>Analyst Agent: synthesizes bull vs bear debate into final verdict</li>
+        <li>Debate scoring: Bear rates the bull thesis (0-100)</li>
+      </ul>
+    </div>
+
+    <div class="feature-card feature-card-alt">
+      <div class="feature-card-icon"><i class="fas fa-layer-group"></i></div>
+      <h3>Moomoo Framework</h3>
+      <p>5-step structured analysis methodology: Objective, Data Collection, Multi-Dimensional Analysis, Synthesis, Structured Report for comprehensive stock research including valuation assessment, entry strategy, and risk management.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-icon"><i class="fas fa-filter"></i></div>
+      <h3>Pre-Execution Filters</h3>
+      <ul>
+        <li>Earnings calendar proximity (blackout within 3 days)</li>
+        <li>Liquidity check (min 300K avg volume, penny stock filter)</li>
+        <li>Volume environment (dead market, manipulation spike detection)</li>
+        <li>Bid-ask spread check</li>
+        <li>ATR pre-gate (min 0.3% daily range)</li>
+        <li>Earnings proximity guard (HIGH risk flag within 5 days)</li>
+      </ul>
+    </div>
+
+    <div class="feature-card feature-card-alt">
+      <div class="feature-card-icon"><i class="fas fa-sync-alt"></i></div>
+      <h3>Automated Scanning</h3>
+      <ul>
+        <li>US equities: pre-market (8:30 ET) and pre-close (15:00 ET) scans</li>
+        <li>Crypto: every 4 hours</li>
+        <li>Position monitoring: every 30 min (US), every 2 hours (crypto)</li>
+        <li>Weekly review: autonomous strategy evaluation</li>
+      </ul>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-icon"><i class="fas fa-map-pin"></i></div>
+      <h3>Position Tracking</h3>
+      <ul>
+        <li>Log entries with entry price, stop-loss, take-profit, quantity</li>
+        <li>Automatic SL/TP monitoring and alerts</li>
+        <li>Close positions on SL hit or TP reached</li>
+      </ul>
+    </div>
+
+    <div class="feature-card feature-card-alt">
+      <div class="feature-card-icon"><i class="fas fa-brain"></i></div>
+      <h3>LLM-Powered Memory</h3>
+      <ul>
+        <li>Karpathy-style wiki: persistent LLM-maintained trading wiki</li>
+        <li>Wiki ingestion: notes and feedback merged into wiki files</li>
+        <li>Wiki linting: automated consistency checking</li>
+        <li>Autoresearch loop: weekly review evaluates signal accuracy</li>
+      </ul>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-icon"><i class="fas fa-user"></i></div>
+      <h3>User Profile</h3>
+      <p>Automatically extracted from wiki content: risk tolerance, preferred timeframes, favorite strategies, max position size, common mistakes.</p>
+    </div>
+
+    <div class="feature-card feature-card-alt">
+      <div class="feature-card-icon"><i class="fas fa-redo"></i></div>
+      <h3>Feedback Loop</h3>
+      <ul>
+        <li>Trade outcomes logged (took/skip/partial with reasons)</li>
+        <li>Signal outcomes tracked (3d, 7d, 14d returns)</li>
+        <li>Outcome-adjusted conviction for LLM analysis</li>
+        <li>Lessons extracted from user behavior</li>
+      </ul>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-icon"><i class="fas fa-comment-dots"></i></div>
+      <h3>Telegram Chat Interface</h3>
+      <ul>
+        <li>Free-form trading chat with LLM-powered responses</li>
+        <li>Tool-using agent: analyze, signals, watchlist, lessons</li>
+        <li>Chat history maintained for conversational context</li>
+      </ul>
+    </div>
+
+    <div class="feature-card feature-card-alt">
+      <div class="feature-card-icon"><i class="fas fa-file-alt"></i></div>
+      <h3>Rich Signal Reports</h3>
+      <ul>
+        <li>HTML-formatted messages with entry zones, exit targets, R:R ratio</li>
+        <li>Confidence breakdown visualization</li>
+        <li>Technical condition assessment (RSI, Stoch, Williams %R)</li>
+        <li>Full LLM reports with bull case, bear case, catalysts, risks</li>
+      </ul>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-icon"><i class="fas fa-chart-bar"></i></div>
+      <h3>Chart Generation</h3>
+      <ul>
+        <li>Candlestick charts with matplotlib/mplfinance</li>
+        <li>EMA21 and EMA55 overlays</li>
+        <li>Entry zone highlight (green band)</li>
+        <li>Stop-loss and take-profit levels annotated</li>
+        <li>Dark theme (dark background, green/red candles)</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- Architecture -->
+<section id="architecture" class="reveal">
+  <div class="section-header">
+    <i class="fas fa-sitemap"></i>
+    <h2>Architecture</h2>
+    <span class="accent-line"></span>
+  </div>
+
+  <h3 style="margin-bottom:16px;font-size:1.1rem;color:var(--gold)">System Architecture Diagram</h3>
+  <div class="mermaid-wrap">
+  <div class="mermaid">
+graph TB
+    subgraph Entry
+        BOT[bot.py &lt;br/&gt;asyncio Runner]
+    end
+    subgraph Telegram
+        TH[TelegramHandler &lt;br/&gt;polling + routing]
+        FMT[formatter.py &lt;br/&gt;HTML reports]
+        CHART[chart.py &lt;br/&gt;candlestick PNGs]
+    end
+    subgraph Engine
+        ORCH[orchestrator.py &lt;br/&gt;Signal Pipeline]
+        STRAT[strategies.py &lt;br/&gt;5 Strategies]
+        CONF[confidence.py &lt;br/&gt;7-dimension scoring]
+        REG[regime.py &lt;br/&gt;Market Regime]
+        FILT[filters.py &lt;br/&gt;Pre-execution filters]
+        GATE[signal_gate.py &lt;br/&gt;8-rule gate]
+    end
+    subgraph Data
+        US[us_feed.py &lt;br/&gt;Alpaca API]
+        CRYPTO[crypto_feed.py &lt;br/&gt;Binance API]
+    end
+    subgraph Analysis
+        NEWS[news.py &lt;br/&gt;Yahoo RSS + CryptoPanic]
+        SENT[sentiment.py &lt;br/&gt;Keyword scoring]
+        FUND[fundamental.py &lt;br/&gt;FMP API]
+        EARN[earnings.py &lt;br/&gt;yfinance calendar]
+        BRD[breadth.py &lt;br/&gt;S&amp;P500 BPI]
+        MOOMOO[moomoo.py &lt;br/&gt;5-step framework]
+    end
+    subgraph LLM
+        CLIENT[client.py &lt;br/&gt;OpenRouter + caching]
+        ANALYST[analyst.py &lt;br/&gt;Bull/Bear/Analyst agents]
+        REP[reporter.py &lt;br/&gt;Signal formatting]
+    end
+    subgraph Memory
+        WIKI[wiki.py &lt;br/&gt;File-based wiki]
+        LEARN[learner.py &lt;br/&gt;Weekly review]
+        FB[feedback.py &lt;br/&gt;Trade feedback]
+        PROF[profile.py &lt;br/&gt;User profile]
+    end
+    subgraph Scheduler
+        DMN[daemon.py &lt;br/&gt;Cron scanning]
+    end
+    subgraph Database
+        DB[(SQLite &lt;br/&gt;sora.db)]
+    end
+    BOT --> TH
+    BOT --> DMN
+    TH --> ORCH
+    DMN --> ORCH
+    ORCH --> US
+    ORCH --> CRYPTO
+    ORCH --> REG
+    ORCH --> STRAT
+    ORCH --> CONF
+    ORCH --> GATE
+    ORCH --> NEWS
+    ORCH --> FUND
+    ORCH --> BRD
+    ORCH --> EARN
+    ORCH --> WIKI
+    ORCH --> ANALYST
+    ANALYST --> CLIENT
+    ANALYST --> MOOMOO
+    TH --> CLIENT
+    TH --> FMT
+    TH --> CHART
+    TH --> DB
+    DMN --> DB
+    DMN --> NEWS
+    DMN --> WIKI
+    LEARN --> DB
+    LEARN --> WIKI
+    FB --> WIKI
+    FB --> DB
+    PROF --> WIKI
+    PROF --> DB
+    WIKI -.->|files| KNOWLEDGE[(knowledge/wiki/)]
+  </div>
+  </div>
+
+  <h3 style="margin:32px 0 16px;font-size:1.1rem;color:var(--gold)">Signal Pipeline Flow</h3>
+  <div class="mermaid-wrap">
+  <div class="mermaid">
+flowchart LR
+    START([Watchlist Symbol]) --> FETCH{Market Type}
+    FETCH -->|US Equity| ALPACA[Alpaca API &lt;br/&gt;90d daily bars]
+    FETCH -->|Crypto| BINANCE[Binance API &lt;br/&gt;90d daily bars]
+    ALPACA --> IND[Indicator Engine]
+    BINANCE --> IND
+    IND --> REGDET[Market Regime &lt;br/&gt;ADX + Trend + Vol]
+    IND --> STRATSELECT[Strategy Selector &lt;br/&gt;regime-compatible strategies evaluated]
+    REGDET --> CONFEVAL[Confidence Engine &lt;br/&gt;7 dimensions]
+    STRATSELECT --> CONFEVAL
+    CONFEVAL --> CONFIDENCE{Confidence OK?}
+    CONFIDENCE -->|REJECT| HOLD1[HOLD &lt;br/&gt;Low confidence]
+    CONFIDENCE -->|LOW/MEDIUM/HIGH| CONFLUENCE[Confluence Validator &lt;br/&gt;ADX + EMA + RSI + Vol + Regime]
+    CONFLUENCE -->|alignment &gt;= 50%| SIGNAL_GATE[Signal Gate &lt;br/&gt;8 rules]
+    CONFLUENCE -->|alignment &lt; 50%| HOLD2[HOLD &lt;br/&gt;Confluence rejected]
+    SIGNAL_GATE -->|passed| LLM_LAYER{Full analysis?}
+    SIGNAL_GATE -->|failed| HOLD3[HOLD &lt;br/&gt;Gate rejected]
+    LLM_LAYER -->|yes| BULL_AGENT[Bull Agent]
+    LLM_LAYER -->|no| RESULT[Direct Signal]
+    BULL_AGENT --> BEAR_AGENT[Bear Agent]
+    BEAR_AGENT --> ANALYST_AGENT[Analyst Agent]
+    ANALYST_AGENT --> VERDICT[BUY / SELL / HOLD]
+    RESULT --> DELIVERY[Telegram Report]
+    VERDICT --> DELIVERY
+    DELIVERY --> CHART[Chart PNG]
+    DELIVERY --> REPORT[HTML Signal Report]
+    REPORT --> DB[(SQLite)]
+  </div>
+  </div>
+
+  <h3 style="margin:32px 0 16px;font-size:1.1rem;color:var(--gold)">LLM Agent Pipeline</h3>
+  <div class="mermaid-wrap">
+  <div class="mermaid">
+sequenceDiagram
+    participant P as Pipeline
+    participant B as Bull Agent
+    participant BE as Bear Agent
+    participant A as Analyst Agent
+    participant LLM as LLM Client &lt;br/&gt;(OpenRouter)
+    P->>B: Market data + indicators + news + fundamentals + wiki + breadth + signal history
+    Note over B: Build strongest bullish case
+    B->>LLM: complete_json(prompt)
+    LLM-->>B: bull_thesis, bull_confidence, key_catalysts
+    P->>BE: Same market data + bull thesis
+    Note over BE: Stress-test bull thesis
+    BE->>LLM: complete_json(prompt)
+    LLM-->>BE: bear_thesis, bear_confidence, key_risks, bear_score_of_bull
+    Note over P: Debate scoring: bear_score_of_bull &lt; 40 = weight bear heavily, &gt; 70 = bear concedes
+    P->>A: Indicators + regime + news + fundamentals + breadth + bull + bear + wiki + history
+    Note over A: Synthesize debate, apply rules, produce final verdict
+    A->>LLM: complete_json(prompt)
+    LLM-->>A: verdict, confidence, entry zone, exit, stop_loss, rr_ratio, summary
+    A-->>P: Structured signal dict
+  </div>
+  </div>
+</section>
+
+<!-- Tech Stack -->
+<section id="tech-stack" class="reveal">
+  <div class="section-header">
+    <i class="fas fa-cubes"></i>
+    <h2>Tech Stack</h2>
+    <span class="accent-line"></span>
+  </div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Component</th><th>Technology</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td>Runtime</td><td><code>Python 3.14+ asyncio</code></td><td>Single-process event loop</td></tr>
+      <tr><td>Telegram Bot</td><td><code>python-telegram-bot / httpx</code></td><td>Message delivery and command handling</td></tr>
+      <tr><td>US Market Data</td><td><code>Alpaca Markets (alpaca-py)</code></td><td>Daily OHLCV bars for US equities</td></tr>
+      <tr><td>Crypto Data</td><td><code>Binance public API (requests)</code></td><td>Daily OHLCV bars for cryptocurrency</td></tr>
+      <tr><td>Regime Data</td><td><code>Alpaca (SPY) / CoinGecko (BTC)</code></td><td>Market regime detection reference</td></tr>
+      <tr><td>News</td><td><code>Yahoo Finance RSS / CryptoPanic RSS</code></td><td>News headline aggregation</td></tr>
+      <tr><td>Fundamentals</td><td><code>Financial Modeling Prep (FMP)</code></td><td>P/E, revenue growth, insider trading</td></tr>
+      <tr><td>Valuation</td><td><code>Financial Modeling Prep (FMP)</code></td><td>P/B, P/S, PEG, EV/EBITDA, ROE, ROA</td></tr>
+      <tr><td>Earnings Calendar</td><td><code>yfinance</code></td><td>Earnings proximity detection</td></tr>
+      <tr><td>Market Breadth</td><td><code>yfinance (S&P 500 BPI)</code></td><td>Bullish Percent Index</td></tr>
+      <tr><td>Technical Charts</td><td><code>matplotlib / mplfinance</code></td><td>Candlestick chart generation</td></tr>
+      <tr><td>LLM API</td><td><code>OpenRouter (httpx)</code></td><td>Multi-model access through single API</td></tr>
+      <tr><td>Database</td><td><code>SQLite (sqlite3)</code></td><td>Persistent storage (no DB server)</td></tr>
+      <tr><td>Scheduler</td><td><code>Custom asyncio loop</code></td><td>Cron-based market scanning</td></tr>
+      <tr><td>Logging</td><td><code>Standard logging + custom formatter</code></td><td>Structured log output</td></tr>
+      <tr><td>Config</td><td><code>python-dotenv</code></td><td>Environment variable management</td></tr>
+      <tr><td>Testing</td><td><code>pytest / pytest-asyncio</code></td><td>Test suite</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- Project Structure -->
+<section id="structure" class="reveal">
+  <div class="section-header">
+    <i class="fas fa-folder-tree"></i>
+    <h2>Project Structure</h2>
+    <span class="accent-line"></span>
+  </div>
+  <div class="dir-tree">
+<span class="hl">noor-telegram-bot/</span>
+  <span class="hl">bot.py</span>                      <span class="cm"># Entry point -- asyncio runner</span>
+  <span class="hl">log.py</span>                      <span class="cm"># Colored logging formatter</span>
+
+  <span class="hl">engine/</span>
+    <span class="hl">orchestrator.py</span>            <span class="cm"># Main signal pipeline</span>
+    <span class="hl">strategies.py</span>              <span class="cm"># 5 built-in trading strategies</span>
+    <span class="hl">confidence.py</span>              <span class="cm"># 7-dimension confidence engine</span>
+    <span class="hl">regime.py</span>                  <span class="cm"># Market regime detection</span>
+    <span class="hl">filters.py</span>                 <span class="cm"># Pre-execution filters</span>
+    <span class="hl">signal_gate.py</span>             <span class="cm"># Hard pre-notification gate (8 rules)</span>
+
+  <span class="hl">telegram/</span>
+    <span class="hl">handler.py</span>                 <span class="cm"># Telegram bot with 20+ slash commands</span>
+    <span class="hl">formatter.py</span>               <span class="cm"># HTML formatters for signal reports</span>
+    <span class="hl">chart.py</span>                   <span class="cm"># Candlestick chart generator</span>
+
+  <span class="hl">data/</span>
+    <span class="hl">us_feed.py</span>                 <span class="cm"># US equities OHLCV via Alpaca</span>
+    <span class="hl">crypto_feed.py</span>             <span class="cm"># Crypto OHLCV via Binance</span>
+
+  <span class="hl">analysis/</span>
+    <span class="hl">news.py</span>                    <span class="cm"># News fetcher (Yahoo + CryptoPanic)</span>
+    <span class="hl">sentiment.py</span>               <span class="cm"># Keyword-based sentiment analysis</span>
+    <span class="hl">fundamental.py</span>             <span class="cm"># Fundamentals via FMP API</span>
+    <span class="hl">earnings.py</span>                <span class="cm"># Earnings proximity guard</span>
+    <span class="hl">breadth.py</span>                 <span class="cm"># S&P 500 Bullish Percent Index</span>
+    <span class="hl">moomoo.py</span>                  <span class="cm"># 5-step structured analysis framework</span>
+
+  <span class="hl">llm/</span>
+    <span class="hl">client.py</span>                  <span class="cm"># OpenRouter client with caching</span>
+    <span class="hl">analyst.py</span>                 <span class="cm"># Multi-agent LLM analysis (Bull/Bear/Analyst)</span>
+    <span class="hl">reporter.py</span>                <span class="cm"># Signal report builder</span>
+
+  <span class="hl">db/</span>
+    <span class="hl">store.py</span>                   <span class="cm"># SQLite persistence (8 tables)</span>
+
+  <span class="hl">scheduler/</span>
+    <span class="hl">daemon.py</span>                  <span class="cm"># Asyncio cron daemon</span>
+
+  <span class="hl">memory/</span>
+    <span class="hl">wiki.py</span>                    <span class="cm"># Karpathy-style LLM wiki</span>
+    <span class="hl">learner.py</span>                 <span class="cm"># Weekly review agent</span>
+    <span class="hl">feedback.py</span>                <span class="cm"># Trade feedback processor</span>
+    <span class="hl">profile.py</span>                 <span class="cm"># User profile extraction</span>
+
+  <span class="hl">knowledge/</span>
+    <span class="hl">wiki/</span>                      <span class="cm"># LLM-maintained wiki files</span>
+    <span class="hl">raw/</span>                       <span class="cm"># Raw input log</span>
+
+  <span class="hl">tests/</span>                       <span class="cm"># pytest test suite</span>
+  <span class="hl">docs/</span>                        <span class="cm"># Documentation artifacts</span>
+  <span class="hl">graphify-out/</span>                <span class="cm"># Knowledge graph visualization</span>
+  </div>
+</section>
+
+<!-- Strategy Engine -->
+<section id="strategy" class="reveal">
+  <div class="section-header">
+    <i class="fas fa-cogs"></i>
+    <h2>Strategy Engine</h2>
+    <span class="accent-line"></span>
+  </div>
+  <div class="prose">
+    <p>The strategy engine uses a <strong>conditional scoring</strong> paradigm. Each strategy defines a set of boolean checks (conditions), counts how many pass, and computes a score as <code>(conditions_met / total_checks) * 100</code>. A minimum threshold must be met for a signal to be emitted.</p>
+  </div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Strategy</th><th>Category</th><th>Difficulty</th><th>Compatible Regimes</th><th>Min Conditions</th><th>Risk (SL/TP)</th></tr></thead>
+    <tbody>
+      <tr><td>EMA + RSI + Volume</td><td>Trend</td><td>Easy</td><td>BULL, NEUTRAL</td><td>4/6</td><td>6%/12%</td></tr>
+      <tr><td>Supertrend + MACD</td><td>Trend</td><td>Medium</td><td>BULL, VOLATILE, NEUTRAL</td><td>3/5</td><td>5%/10%</td></tr>
+      <tr><td>Bollinger Squeeze</td><td>Breakout</td><td>Medium</td><td>BULL, VOLATILE, RANGING</td><td>3/5</td><td>7%/14%</td></tr>
+      <tr><td>RSI Mean Reversion</td><td>Mean Reversion</td><td>Easy</td><td>RANGING, VOLATILE, NEUTRAL</td><td>2/4</td><td>4%/7%</td></tr>
+      <tr><td>VWAP Momentum</td><td>Intraday</td><td>Advanced</td><td>BULL, NEUTRAL, VOLATILE</td><td>3/5</td><td>5%/10%</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="note"><i class="fas fa-info-circle"></i> The <code>StrategySelector</code> iterates over all regime-compatible strategies, evaluates each, and selects the one with the highest blended score (signal confidence contribution weighted against optional historical confidence scores).</div>
+</section>
+
+<!-- Scheduler -->
+<section id="scheduler" class="reveal">
+  <div class="section-header">
+    <i class="fas fa-clock"></i>
+    <h2>Scheduler</h2>
+    <span class="accent-line"></span>
+  </div>
+  <div class="prose">
+    <p>The daemon runs a 30-second polling loop and triggers scans based on time and market conditions:</p>
+  </div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Scan</th><th>Schedule</th><th>Market</th><th>Symbols</th></tr></thead>
+    <tbody>
+      <tr><td>US Pre-market</td><td>8:30 AM ET (trading days)</td><td>US</td><td>Watchlist (market=us)</td></tr>
+      <tr><td>US Pre-close</td><td>3:00 PM ET (trading days)</td><td>US</td><td>Watchlist (market=us)</td></tr>
+      <tr><td>Crypto</td><td>Every 4 hours, :00</td><td>Crypto</td><td>Watchlist (market=crypto)</td></tr>
+      <tr><td>Position Scan (US)</td><td>Every 30 min during market hours</td><td>US</td><td>Open positions</td></tr>
+      <tr><td>Position Scan (Crypto)</td><td>Every 2 hours at :30</td><td>Crypto</td><td>Open positions</td></tr>
+      <tr><td>News Scan</td><td>After each market scan</td><td>Per market</td><td>Scanned symbols</td></tr>
+      <tr><td>Weekly Review</td><td>Sunday 20:00 ET</td><td>All</td><td>All signals</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="note"><i class="fas fa-info-circle"></i> The scheduler is NYSE holiday-aware. Entry zones are tightened to real-time price (+-0.3% for US, +-0.5% for crypto).</div>
+</section>
+
+<!-- Memory System -->
+<section id="memory" class="reveal">
+  <div class="section-header">
+    <i class="fas fa-database"></i>
+    <h2>Memory System</h2>
+    <span class="accent-line"></span>
+  </div>
+  <div class="prose">
+    <p>The memory system implements a Karpathy-style LLM wiki:</p>
+  </div>
+  <div class="dir-tree">
+<span class="hl">knowledge/</span>
+  <span class="hl">wiki/</span>
+    <span class="hl">strategy.md</span>        <span class="cm"># Active trading strategies and rules</span>
+    <span class="hl">patterns.md</span>        <span class="cm"># Chart patterns the LLM has identified</span>
+    <span class="hl">lessons.md</span>         <span class="cm"># Accumulated lessons from review cycles</span>
+    <span class="hl">regime.md</span>          <span class="cm"># Market regime observations and notes</span>
+    <span class="hl">symbols/</span>
+      <span class="hl">AAPL.md</span>          <span class="cm"># Per-symbol wiki pages</span>
+      <span class="hl">BTC.md</span>
+  <span class="hl">raw/</span>
+    <span class="hl">inputs.log</span>         <span class="cm"># Raw input log for audit trail</span>
+  </div>
+  <div class="subsection" style="margin-top:20px">
+    <h3 style="font-size:14px">Wiki Ingestion</h3>
+    <p class="prose">When a user submits a note or trade feedback, the LLM reads the current wiki content and the new input, then decides which sections to update. It returns a JSON dict mapping filenames to full new content. Only the files that change are written.</p>
+  </div>
+  <div class="subsection">
+    <h3 style="font-size:14px">Wiki Linting</h3>
+    <p class="prose">An LLM-driven audit checks for contradictions, stale claims, orphan pages, and data gaps. Returns a structured issue report with severity levels.</p>
+  </div>
+  <div class="subsection">
+    <h3 style="font-size:14px">Weekly Review</h3>
+    <p class="prose">The ReviewAgent evaluates all signals from the past week against actual outcomes, identifies which strategies over/underperformed, updates confidence weights, and extracts new behavioral patterns. Results are merged into lessons.md.</p>
+  </div>
+</section>
+
+<!-- Database -->
+<section id="database" class="reveal">
+  <div class="section-header">
+    <i class="fas fa-table"></i>
+    <h2>Database</h2>
+    <span class="accent-line"></span>
+  </div>
+  <div class="prose">
+    <p>SQLite database (<code>sora.db</code>) with 8 tables:</p>
+  </div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Table</th><th>Purpose</th><th>Key Columns</th></tr></thead>
+    <tbody>
+      <tr><td><code>watchlist</code></td><td>Symbols to scan</td><td>symbol, market, added_at</td></tr>
+      <tr><td><code>signals</code></td><td>Generated signals</td><td>symbol, market, verdict, confidence, entry_low, entry_high, exit_target, stop_loss, rr_ratio, strategy, regime</td></tr>
+      <tr><td><code>signal_outcomes</code></td><td>Actual returns</td><td>signal_id, actual_return_3d/7d/14d</td></tr>
+      <tr><td><code>user_feedback</code></td><td>Trade actions</td><td>symbol, action (took/skip/partial), reason, emotional_state</td></tr>
+      <tr><td><code>user_profile</code></td><td>Trading profile</td><td>profile_json (JSON blob)</td></tr>
+      <tr><td><code>agent_lessons</code></td><td>LLM-learned lessons</td><td>lesson_type, symbol, pattern, confidence_impact</td></tr>
+      <tr><td><code>llm_cache</code></td><td>LLM response cache</td><td>input_hash, output, model, expires_at</td></tr>
+      <tr><td><code>positions</code></td><td>Open/closed positions</td><td>symbol, entry_price, qty, stop_loss, take_profit, status</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- Setup -->
+<section id="setup" class="reveal">
+  <div class="section-header">
+    <i class="fas fa-rocket"></i>
+    <h2>Installation</h2>
+    <span class="accent-line"></span>
+  </div>
+  <div class="prose">
+    <p>Clone, install, configure, and run in minutes:</p>
+  </div>
+  <div class="code-block"><code>
+<span class="cm"># Clone the repository</span>
+git <span class="kw">clone</span> &lt;repository-url&gt;
+cd noor-telegram-bot
+
+<span class="cm"># Create virtual environment</span>
+python -m venv .venv
+<span class="fn">source</span> .venv/bin/activate
+
+<span class="cm"># Install dependencies</span>
+pip install -r requirements.txt
+
+<span class="cm"># Configure environment</span>
+cp .env.template .env
+<span class="cm"># Edit .env with your API keys</span>
+
+<span class="cm"># Initialize the database</span>
+python -c <span class="str">"from db.store import init_db; init_db()"</span>
+
+<span class="cm"># Start the bot</span>
+python bot.py
+  </code></div>
+
+  <div class="section-header" style="margin-top:48px">
+    <i class="fas fa-key"></i>
+    <h2>Configuration</h2>
+    <span class="accent-line"></span>
+  </div>
+  <div class="prose">
+    <p>All configuration is via environment variables (loaded from <code>.env</code>):</p>
+  </div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Variable</th><th>Required</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>TELEGRAM_BOT_TOKEN</code></td><td>Yes</td><td>Telegram bot token from @BotFather</td></tr>
+      <tr><td><code>TELEGRAM_CHAT_ID</code></td><td>Yes</td><td>Target chat ID for signal delivery</td></tr>
+      <tr><td><code>OPENROUTER_API_KEY</code></td><td>Yes</td><td>OpenRouter API key for LLM access</td></tr>
+      <tr><td><code>ALPACA_API_KEY</code></td><td>Yes*</td><td>Alpaca Markets API key (US equities)</td></tr>
+      <tr><td><code>ALPACA_SECRET_KEY</code></td><td>Yes*</td><td>Alpaca Markets secret key</td></tr>
+      <tr><td><code>FMP_API_KEY</code></td><td>No</td><td>Financial Modeling Prep key (fundamentals)</td></tr>
+      <tr><td><code>FINNHUB_API_KEY</code></td><td>No</td><td>Finnhub API key (real-time prices)</td></tr>
+      <tr><td><code>DB_PATH</code></td><td>No</td><td>SQLite database path (default: sora.db)</td></tr>
+      <tr><td><code>DEFAULT_MODEL</code></td><td>No</td><td>Default LLM model (default: openrouter/free)</td></tr>
+      <tr><td><code>FAST_MODEL</code></td><td>No</td><td>Fast LLM model for bull/bear agents</td></tr>
+      <tr><td><code>ANALYSIS_MODEL</code></td><td>No</td><td>Analysis LLM model for synthesis</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="note"><i class="fas fa-info-circle"></i> *Required for US equities. Crypto works without Alpaca keys. The bot gracefully degrades when optional API keys are missing.</div>
+
+  <div class="section-header" style="margin-top:48px">
+    <i class="fas fa-terminal"></i>
+    <h2>Usage</h2>
+    <span class="accent-line"></span>
+  </div>
+  <div class="code-block"><code>
+<span class="cm"># Start the bot (runs until Ctrl+C)</span>
+python bot.py
+
+<span class="cm"># Run tests</span>
+pytest tests/ -v
+
+<span class="cm"># Initialize/reset database</span>
+python -c <span class="str">"from db.store import init_db; init_db()"</span>
+  </code></div>
+  <div class="prose">
+    <p>The bot starts two concurrent asyncio tasks:</p>
+    <ol>
+      <li><strong>Telegram polling loop</strong> &mdash; receives commands and chat messages, delivers reports</li>
+      <li><strong>Scheduler daemon</strong> &mdash; runs automated scans at market-appropriate times</li>
+    </ol>
+  </div>
+</section>
+
+<!-- Commands -->
+<section id="commands" class="reveal">
+  <div class="section-header">
+    <i class="fas fa-keyboard"></i>
+    <h2>Telegram Commands</h2>
+    <span class="accent-line"></span>
+  </div>
+
+  <div class="cmd-group">
+    <h4><i class="fas fa-search" style="color:var(--gold);margin-right:8px"></i> Analysis</h4>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Command</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>/analyze SYMBOL</code></td><td>Quick technical signal (~30s)</td></tr>
+        <tr><td><code>/analyze SYMBOL -full</code></td><td>Deep multi-agent LLM report (~90s)</td></tr>
+        <tr><td><code>/analyze SYMBOL -mm</code></td><td>Moomoo 5-step framework analysis</td></tr>
+        <tr><td><code>/analyze SYMBOL -swing</code></td><td>Force swing timeframe</td></tr>
+        <tr><td><code>/analyze SYMBOL -long</code></td><td>Force long-term timeframe</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="cmd-group">
+    <h4><i class="fas fa-list" style="color:var(--cyan);margin-right:8px"></i> Watchlist</h4>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Command</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>/watchlist -add SYMBOL</code></td><td>Add symbol to watchlist</td></tr>
+        <tr><td><code>/watchlist -remove SYMBOL</code></td><td>Remove symbol from watchlist</td></tr>
+        <tr><td><code>/watchlist -ls</code></td><td>List all watchlist symbols</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="cmd-group">
+    <h4><i class="fas fa-map-pin" style="color:var(--gold);margin-right:8px"></i> Positions</h4>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Command</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>/position -add SYMBOL PRICE [QTY] [sl:X] [tp:X]</code></td><td>Log a new position</td></tr>
+        <tr><td><code>/position -ls</code></td><td>List open positions</td></tr>
+        <tr><td><code>/position -close SYMBOL</code></td><td>Close a position</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="cmd-group">
+    <h4><i class="fas fa-book" style="color:var(--cyan);margin-right:8px"></i> Knowledge</h4>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Command</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>/note "text"</code></td><td>Save a free-form thought</td></tr>
+        <tr><td><code>/note -symbol SYMBOL "text"</code></td><td>Save a symbol-specific note</td></tr>
+        <tr><td><code>/strategy add "rule"</code></td><td>Add a strategy rule</td></tr>
+        <tr><td><code>/wiki TOPIC</code></td><td>View wiki page (strategy, patterns, lessons, regime, or symbol)</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="cmd-group">
+    <h4><i class="fas fa-exchange-alt" style="color:var(--gold);margin-right:8px"></i> Feedback</h4>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Command</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>/trade SYMBOL took|skip|partial [reason]</code></td><td>Log trade action</td></tr>
+        <tr><td><code>/history SYMBOL 7d</code></td><td>View signal history</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="cmd-group">
+    <h4><i class="fas fa-microscope" style="color:var(--cyan);margin-right:8px"></i> Drill-Down</h4>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Command</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>/reasoning SYMBOL</code></td><td>Technical breakdown (LLM-powered)</td></tr>
+        <tr><td><code>/backtest SYMBOL 6m</code></td><td>Backtest strategies on symbol</td></tr>
+        <tr><td><code>/catalyst SYMBOL</code></td><td>News catalyst analysis</td></tr>
+        <tr><td><code>/sentiment SYMBOL</code></td><td>Sentiment analysis</td></tr>
+        <tr><td><code>/why SYMBOL</code></td><td>Entry rationale</td></tr>
+        <tr><td><code>/think SYMBOL "thesis"</code></td><td>Save a trading thesis</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="cmd-group">
+    <h4><i class="fas fa-cog" style="color:var(--gold);margin-right:8px"></i> System</h4>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Command</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>/scan</code></td><td>Scan entire watchlist (full pipeline)</td></tr>
+        <tr><td><code>/scan -quick</code></td><td>Quick technical scores only</td></tr>
+        <tr><td><code>/regime</code></td><td>Current market regime (US + Crypto)</td></tr>
+        <tr><td><code>/profile</code></td><td>View your trading profile</td></tr>
+        <tr><td><code>/status</code></td><td>System health and status</td></tr>
+        <tr><td><code>/help</code></td><td>Command reference</td></tr>
+        <tr><td><code>/clear</code></td><td>Clear pending updates</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="subsection" style="margin-top:28px">
+    <h4 style="font-size:14px;font-weight:600;color:var(--gold);margin-bottom:10px"><i class="fas fa-comment"></i> Free-Form Chat</h4>
+    <div class="prose">
+      <p>Any message not starting with <code>/</code> is routed to the LLM-powered chat agent with access to tools: <code>analyze_symbol</code>, <code>get_recent_signals</code>, <code>get_watchlist</code>, <code>get_lessons</code>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Extending -->
+<section id="extending" class="reveal">
+  <div class="section-header">
+    <i class="fas fa-puzzle-piece"></i>
+    <h2>Extending</h2>
+    <span class="accent-line"></span>
+  </div>
+
+  <div class="subsection">
+    <h3 style="font-size:14px;color:var(--gold)">Adding a New Strategy</h3>
+    <ol class="prose">
+      <li>Create a new class in <code>engine/strategies.py</code> inheriting from <code>Strategy</code></li>
+      <li>Define <code>name</code>, <code>description</code>, <code>category</code>, <code>difficulty</code>, <code>compatible_regimes</code>, <code>risk_params</code>, and <code>min_confidence</code></li>
+      <li>Implement the <code>evaluate()</code> method returning a <code>StrategySignal</code> or <code>None</code></li>
+      <li>Register it: add <code>register(YourStrategy())</code> at module level</li>
+    </ol>
+  </div>
+
+  <div class="subsection">
+    <h3 style="font-size:14px;color:var(--gold)">Adding a New Data Source</h3>
+    <ol class="prose">
+      <li>Create a new module in <code>data/</code> returning bars in dict format: <code>{"time": int, "open": float, "high": float, "low": float, "close": float, "volume": float}</code></li>
+      <li>Update <code>_fetch_bars()</code> in <code>orchestrator.py</code> to dispatch to your new source</li>
+      <li>Update <code>_detect_market()</code> and crypto symbol set</li>
+    </ol>
+  </div>
+
+  <div class="subsection">
+    <h3 style="font-size:14px;color:var(--gold)">Adding a New Analysis Module</h3>
+    <ol class="prose">
+      <li>Create a new module in <code>analysis/</code></li>
+      <li>Import and call it from <code>_run_full_analysis()</code> in <code>orchestrator.py</code></li>
+      <li>The data will be passed to the Bull/Bear/Analyst agents as context</li>
+    </ol>
+  </div>
+</section>
+
+<!-- Knowledge Graph -->
+<section id="knowledge-graph" class="reveal">
+  <div class="section-header">
+    <i class="fas fa-project-diagram"></i>
+    <h2>Knowledge Graph</h2>
+    <span class="accent-line"></span>
+  </div>
+  <div class="prose">
+    <p>An interactive knowledge graph of this project is available at <code>graphify-out/graph.html</code>, generated from the full codebase structure and relationships between modules. Open it in a browser to explore how every module connects.</p>
+  </div>
+</section>
+
+</div>
+
+<footer>
+  <div class="footer-links">
+    <a href="#overview">Overview</a>
+    <a href="#features">Features</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#tech-stack">Tech Stack</a>
+    <a href="#setup">Setup</a>
+    <a href="#commands">Commands</a>
+  </div>
+  <p>Sora Trading Bot v2 &mdash; Personal-use AI trading signal agent &mdash; <a href="https://github.com/sayem/noor-telegram-bot">GitHub</a></p>
+  <p style="margin-top:8px;font-size:13px">Knowledge graph: <a href="graphify-out/graph.html">graphify-out/graph.html</a></p>
+</footer>
+
+<script>
+mermaid.initialize({startOnLoad:true,theme:'dark',themeVariables:{
+  darkMode:true,
+  background:'#1a1a28',
+  primaryColor:'#f0b90b',
+  primaryTextColor:'#e8e8f0',
+  secondaryColor:'#00d4aa',
+  lineColor:'#2a2a40',
+  fontSize:'13px',
+  fontFamily:'Inter, sans-serif'
+}});
+
+// Scroll reveal
+const observer = new IntersectionObserver((entries)=>{
+  entries.forEach(entry=>{
+    if(entry.isIntersecting){
+      entry.target.classList.add('visible');
+    }
+  });
+},{threshold:0.1,rootMargin:'0px 0px -50px 0px'});
+
+document.querySelectorAll('.reveal').forEach(el=>observer.observe(el));
+
+// Nav scroll detection
+const navbar = document.getElementById('navbar');
+const sections = document.querySelectorAll('section[id]');
+const navLinks = document.querySelectorAll('.nav-link');
+
+window.addEventListener('scroll',()=>{
+  // Nav background
+  navbar.classList.toggle('scrolled',window.scrollY>50);
+
+  // Active nav link
+  let current = '';
+  sections.forEach(section=>{
+    const top = section.offsetTop - 120;
+    if(window.scrollY >= top){
+      current = section.getAttribute('id');
+    }
+  });
+  navLinks.forEach(link=>{
+    link.classList.toggle('active',link.getAttribute('href')==='#'+current);
+  });
+});
+
+// Animated counters
+const counterObserver = new IntersectionObserver((entries)=>{
+  entries.forEach(entry=>{
+    if(entry.isIntersecting){
+      const el = entry.target;
+      const target = parseInt(el.getAttribute('data-count'));
+      if(!target) return;
+      let current = 0;
+      const increment = Math.ceil(target / 40);
+      const timer = setInterval(()=>{
+        current += increment;
+        if(current >= target){current=target;clearInterval(timer)}
+        el.textContent = current;
+      },40);
+      counterObserver.unobserve(el);
+    }
+  });
+},{threshold:0.5});
+
+document.querySelectorAll('.hero-stat-num').forEach(el=>counterObserver.observe(el));
+</script>
+</body>
+</html>

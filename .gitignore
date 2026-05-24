@@ -22,3 +22,5 @@ docs/superpowers/
 .coverage
 node_modules/
 .tg_offset
+.omo/
+index-preview.png
