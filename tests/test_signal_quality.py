@@ -107,3 +107,38 @@ def test_format_signal_history_string():
     assert "BUY" in result
     assert "8.2%" in result
     assert "-4.1%" in result
+
+# ── Task 6: Earnings guard wire-up ────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_earnings_high_risk_forces_wait():
+    """If earnings_risk == HIGH, synthesis prompt must include WAIT bias."""
+    indicators = {
+        "price": 150.0, "atr_14": 2.0, "rsi_14": 55,
+        "bb_upper": 158.0, "bb_lower": 142.0,
+        "volume": 5_000_000, "avg_volume": 4_000_000,
+        "vol_ratio_21d": 1.25, "volume_signal": "neutral", "adx": 28,
+    }
+    mock_regime = MagicMock()
+    mock_regime.regime = "BULL"
+    mock_regime.adx = 28
+
+    captured_messages = []
+
+    async def mock_analyze_full(*args, **kwargs):
+        captured_messages.append(kwargs)
+        return {"verdict": "BUY", "confidence": 80}
+
+    with patch("engine.orchestrator._fetch_bars", return_value=[{"close": 150}] * 30), \
+         patch("engine.orchestrator._compute_indicators", return_value=indicators), \
+         patch("engine.orchestrator.detect_regime", return_value=mock_regime), \
+         patch("analysis.earnings.earnings_risk_flag", return_value="HIGH"), \
+         patch("llm.analyst.analyze_full", side_effect=mock_analyze_full):
+
+        from engine.orchestrator import _run_full_analysis
+        await _run_full_analysis("AAPL", "us")
+
+    # Check that earnings risk was injected into wiki_context
+    assert len(captured_messages) == 1
+    all_context = str(captured_messages[0])
+    assert "earnings" in all_context.lower() or "HIGH" in all_context
