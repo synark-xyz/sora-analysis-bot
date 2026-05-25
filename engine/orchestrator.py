@@ -170,6 +170,21 @@ def _compute_indicators(symbol: str, bars: list[dict]) -> dict:
     ) if len(volumes) >= 6 else 1.0
 
     indicators["avg_volume"] = sum(volumes[-21:]) / min(len(volumes), 21) if volumes else 0
+
+    # 21-day volume confirmation (more robust than 5-bar ratio)
+    avg_vol_21 = indicators["avg_volume"]
+    indicators["vol_ratio_21d"] = round(
+        volumes[-1] / avg_vol_21, 2
+    ) if avg_vol_21 > 0 else 1.0
+
+    _vr = indicators["vol_ratio_21d"]
+    if _vr >= 1.5:
+        indicators["volume_signal"] = "strong"
+    elif _vr <= 0.6:
+        indicators["volume_signal"] = "weak"
+    else:
+        indicators["volume_signal"] = "neutral"
+
     indicators["adx"] = _adx(highs, lows, closes)
 
     trend = _calc_trend(closes)
@@ -677,6 +692,58 @@ async def _run_full_analysis(symbol: str, market: str) -> dict:
         indicators = _compute_indicators(symbol, bars)
         regime = detect_regime()
 
+        # ── R:R Pre-Gate: skip LLM on untradeable setups ──────────────────
+        _price = indicators.get("price", 0)
+        _atr = indicators.get("atr_14", 0)
+        if _price > 0 and _atr > 0:
+            _atr_pct = _atr / _price
+            if _atr_pct < 0.003:  # < 0.3% daily range = flatline, no R:R possible
+                return {
+                    "symbol": symbol,
+                    "verdict": "HOLD",
+                    "reason": "LOW_ATR_PREGATE",
+                    "confidence": 0,
+                    "summary": f"ATR/price={_atr_pct:.4f} below minimum 0.3% — no tradeable setup.",
+                }
+        # ── end pre-gate ───────────────────────────────────────────────────
+
+        # ── Earnings proximity guard ───────────────────────────────────────
+        earnings_note = ""
+        if market == "us":
+            try:
+                from analysis.earnings import earnings_risk_flag, days_to_earnings
+                e_risk = earnings_risk_flag(symbol)
+                e_days = days_to_earnings(symbol)
+                if e_risk == "HIGH":
+                    earnings_note = (
+                        f"⚠️ EARNINGS RISK: Earnings in ~{e_days} day(s). "
+                        f"Treat any BUY/SELL signal with HIGH caution. "
+                        f"Prefer WAIT verdict unless setup is exceptional."
+                    )
+                elif e_days is not None:
+                    earnings_note = f"Next earnings in ~{e_days} days (LOW risk)."
+            except Exception:
+                pass
+        # ── end earnings guard ─────────────────────────────────────────────
+
+        # ── Outcome-adjusted conviction ────────────────────────────────────
+        conviction_note = ""
+        try:
+            from db.store import get_signal_win_rate
+            wr = get_signal_win_rate(symbol, verdict="BUY", min_samples=3)
+            if wr:
+                conviction_note = (
+                    f"Historical BUY accuracy for {symbol}: "
+                    f"{wr['win_rate']}% (n={wr['sample_size']}, "
+                    f"avg 3d return: {wr['avg_return_3d']:+.1f}%). "
+                    + ("Historically strong — can support higher confidence." if wr['win_rate'] >= 65
+                       else "Historically weak — cap confidence conservatively." if wr['win_rate'] < 40
+                       else "Mixed history — use standard confidence.")
+                )
+        except Exception:
+            pass
+        # ── end conviction ─────────────────────────────────────────────────
+
         news = ""
         try:
             from analysis.news import fetch_news
@@ -699,6 +766,33 @@ async def _run_full_analysis(symbol: str, market: str) -> dict:
         except Exception:
             pass
 
+        # Append earnings + conviction notes to wiki_context
+        if earnings_note:
+            wiki_context = f"{wiki_context}\n\n{earnings_note}".strip()
+        if conviction_note:
+            wiki_context = f"{wiki_context}\n\n{conviction_note}".strip()
+
+        # ── Market breadth context ─────────────────────────────────────────
+        breadth_context = ""
+        if market == "us":
+            try:
+                from analysis.breadth import get_market_breadth, breadth_context_str
+                breadth = get_market_breadth()
+                breadth_context = breadth_context_str(breadth)
+            except Exception:
+                pass
+        # ── end breadth ────────────────────────────────────────────────────
+
+        # ── Historical signal injection ────────────────────────────────────
+        signal_history = ""
+        try:
+            from db.store import get_recent_signals_for_symbol, format_signal_history
+            past = get_recent_signals_for_symbol(symbol, limit=5)
+            signal_history = format_signal_history(past)
+        except Exception:
+            pass
+        # ── end history ────────────────────────────────────────────────────
+
         return await analyze_full(
             symbol=symbol,
             indicators=indicators,
@@ -706,6 +800,8 @@ async def _run_full_analysis(symbol: str, market: str) -> dict:
             news=news,
             fundamentals=fundamentals,
             wiki_context=wiki_context,
+            signal_history=signal_history,
+            breadth_context=breadth_context,
         )
     except ImportError:
         return {}
