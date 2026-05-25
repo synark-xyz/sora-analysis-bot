@@ -1,0 +1,1671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sora Trading Bot v2 — AI Trading Signal Agent</title>
+<meta name="description" content="Personal-use Telegram-based AI trading signal agent for US equities and cryptocurrency. Entry/exit zone signals with full reasoning through multi-agent LLM debate.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800;14..32,900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+/* === RESET === */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+/* === TOKENS === */
+:root{
+  --bg:#020617;--bg2:#0a0f1e;--bg3:#111827;
+  --surface:#1a2035;--surface2:#1f2847;
+  --gold:#f0b90b;--gold-dim:#c9960a;
+  --cyan:#00d4aa;--cyan-dim:#00a882;
+  --green:#22c55e;--red:#ef4444;
+  --text:#f8fafc;--text2:#94a3b8;--text3:#475569;
+  --border:#1e293b;--border2:#2a3a55;
+  --r:14px;--rs:8px;--rl:20px;
+}
+
+/* === REDUCED MOTION === */
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
+
+/* === BASE === */
+html{scroll-behavior:smooth}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);color:var(--text);line-height:1.7;overflow-x:hidden}
+a{color:var(--cyan);text-decoration:none;transition:color .2s}
+a:hover{color:var(--gold)}
+
+/* === NAV — floating === */
+nav{
+  position:fixed;top:14px;left:14px;right:14px;z-index:1000;
+  background:rgba(2,6,23,.75);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+  border:1px solid var(--border2);border-radius:var(--r);
+  transition:background .3s,border-color .3s;
+}
+nav.scrolled{background:rgba(2,6,23,.95)}
+.nav-inner{
+  max-width:1280px;margin:0 auto;padding:0 18px;
+  display:flex;align-items:center;height:50px;gap:2px;
+  overflow-x:auto;scrollbar-width:none;
+}
+.nav-inner::-webkit-scrollbar{display:none}
+.nav-logo{
+  display:flex;align-items:center;gap:8px;
+  font-weight:700;font-size:14px;color:var(--text);
+  white-space:nowrap;margin-right:14px;flex-shrink:0;cursor:pointer;
+}
+.nav-logo-icon{
+  width:28px;height:28px;
+  background:linear-gradient(135deg,var(--gold),var(--gold-dim));
+  border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.nav-link{
+  font-size:12px;color:var(--text3);white-space:nowrap;
+  padding:5px 9px;border-radius:6px;
+  transition:all .2s;flex-shrink:0;font-weight:500;cursor:pointer;
+}
+.nav-link:hover,.nav-link.active{color:var(--text);background:rgba(255,255,255,.05)}
+.nav-link.active{color:var(--gold)}
+
+/* === TICKER === */
+.ticker-wrap{
+  position:fixed;top:80px;left:14px;right:14px;z-index:999;
+  background:rgba(2,6,23,.7);backdrop-filter:blur(12px);
+  border:1px solid var(--border);border-radius:8px;
+  height:26px;overflow:hidden;
+}
+.ticker-inner{
+  display:flex;align-items:center;height:100%;
+  animation:ticker 45s linear infinite;width:max-content;
+}
+@keyframes ticker{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+.t-item{display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:10.5px;padding:0 18px;color:var(--text3)}
+.t-sym{color:var(--text2);font-weight:600}
+.t-up{color:var(--green)}
+.t-dn{color:var(--red)}
+.t-sep{color:var(--border2);padding:0 4px}
+
+/* === HERO === */
+.hero{
+  min-height:100vh;
+  display:grid;grid-template-columns:1fr 1fr;align-items:center;gap:40px;
+  padding:150px 56px 80px;max-width:1300px;margin:0 auto;position:relative;
+}
+.hero::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:-1;
+  background:
+    radial-gradient(ellipse 70% 60% at 20% 50%,rgba(240,185,11,.04) 0%,transparent 70%),
+    radial-gradient(ellipse 60% 60% at 80% 40%,rgba(0,212,170,.03) 0%,transparent 60%);
+}
+.hero-text{max-width:560px}
+
+.hero-badge{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:6px 14px;border:1px solid rgba(240,185,11,.3);border-radius:100px;
+  font-size:11.5px;font-weight:500;color:var(--gold);
+  margin-bottom:26px;background:rgba(240,185,11,.06);letter-spacing:.03em;
+}
+.badge-dot{
+  width:6px;height:6px;background:var(--green);border-radius:50%;
+  animation:blink 2s ease-in-out infinite;
+}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+.hero h1{
+  font-size:clamp(2.2rem,3.8vw,3.8rem);font-weight:900;
+  line-height:1.06;letter-spacing:-.04em;margin-bottom:18px;
+}
+.hero h1 .grad{
+  background:linear-gradient(120deg,var(--gold) 0%,#ffd700 40%,var(--cyan) 100%);
+  background-size:200% 200%;
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  animation:gradShift 5s ease infinite;
+}
+@keyframes gradShift{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+
+.hero-sub{font-size:.98rem;color:var(--text2);margin-bottom:34px;line-height:1.78}
+
+.hero-actions{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:44px}
+.hero-btn{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:12px 24px;border-radius:10px;font-size:14px;font-weight:600;
+  transition:all .25s cubic-bezier(.4,0,.2,1);cursor:pointer;letter-spacing:.01em;
+}
+.hero-btn.primary{
+  background:linear-gradient(135deg,var(--gold),var(--gold-dim));
+  color:#0a0800;border:none;box-shadow:0 0 28px rgba(240,185,11,.2);
+}
+.hero-btn.primary:hover{transform:translateY(-2px);box-shadow:0 8px 32px rgba(240,185,11,.35);color:#0a0800}
+.hero-btn.secondary{
+  background:rgba(255,255,255,.04);border:1px solid var(--border2);color:var(--text2);
+}
+.hero-btn.secondary:hover{border-color:var(--cyan);color:var(--cyan);transform:translateY(-2px);background:rgba(0,212,170,.05)}
+
+.hero-stats{display:flex;gap:32px;flex-wrap:wrap}
+.hero-stat-num{
+  font-size:1.75rem;font-weight:800;color:var(--gold);
+  font-variant-numeric:tabular-nums;font-family:'JetBrains Mono',monospace;line-height:1;
+}
+.hero-stat-num.c{color:var(--cyan)}
+.hero-stat-label{font-size:10.5px;color:var(--text3);margin-top:4px;text-transform:uppercase;letter-spacing:.06em;font-weight:500}
+
+/* === HERO SVG === */
+.hero-visual{display:flex;align-items:center;justify-content:center}
+.hero-svg-wrap{width:100%;max-width:660px;animation:svgFloat 7s ease-in-out infinite}
+@keyframes svgFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+.hero-svg{width:100%;height:auto;overflow:visible}
+
+/* candle entrance (played once on load) */
+@keyframes candleIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.candle{opacity:0;animation:candleIn .35s ease-out forwards}
+
+/* === PARTICLES === */
+.particles{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden}
+@keyframes pFloat{0%{opacity:0;transform:translateY(100vh) scale(0)}10%{opacity:.7}90%{opacity:.2}100%{opacity:0;transform:translateY(-80px) scale(1.2)}}
+
+/* === CONTENT === */
+.content{max-width:1000px;margin:0 auto;padding:0 24px 80px}
+
+/* === SECTIONS === */
+section{
+  margin-bottom:84px;
+  opacity:0;transform:translateY(22px);
+  transition:opacity .65s cubic-bezier(.22,1,.36,1),transform .65s cubic-bezier(.22,1,.36,1);
+}
+section.visible{opacity:1;transform:translateY(0)}
+
+.section-header{display:flex;align-items:center;gap:14px;margin-bottom:30px;padding-bottom:18px;border-bottom:1px solid var(--border)}
+.section-icon{
+  width:42px;height:42px;display:flex;align-items:center;justify-content:center;
+  background:var(--surface);border:1px solid var(--border2);border-radius:10px;
+  flex-shrink:0;color:var(--gold);font-size:17px;
+}
+.section-header h2{font-size:1.5rem;font-weight:700;letter-spacing:-.025em}
+.section-header h2 .hl{color:var(--gold)}
+.accent-line{flex:1;height:1px;background:linear-gradient(90deg,var(--border),transparent)}
+
+.lead-text{font-size:1rem;color:var(--text2);margin-bottom:26px;line-height:1.8}
+
+/* === FEATURE GRID === */
+.feature-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.feature-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
+  padding:22px;transition:all .25s cubic-bezier(.4,0,.2,1);cursor:default;
+  position:relative;overflow:hidden;
+}
+.feature-card::before{
+  content:'';position:absolute;inset:0;border-radius:inherit;
+  background:linear-gradient(135deg,rgba(240,185,11,.05) 0%,transparent 55%);
+  opacity:0;transition:opacity .3s;
+}
+.feature-card:hover::before{opacity:1}
+.feature-card:hover{border-color:rgba(240,185,11,.3);transform:translateY(-4px);box-shadow:0 16px 44px rgba(0,0,0,.35)}
+.feature-card-alt::before{background:linear-gradient(135deg,rgba(0,212,170,.05) 0%,transparent 55%)}
+.feature-card-alt:hover{border-color:rgba(0,212,170,.3)}
+.feature-card-icon{
+  width:38px;height:38px;display:flex;align-items:center;justify-content:center;
+  background:rgba(240,185,11,.08);border:1px solid rgba(240,185,11,.18);
+  border-radius:9px;margin-bottom:13px;color:var(--gold);font-size:15px;flex-shrink:0;
+}
+.feature-card-alt .feature-card-icon{background:rgba(0,212,170,.08);border-color:rgba(0,212,170,.18);color:var(--cyan)}
+.feature-card h3{font-size:13.5px;font-weight:600;margin-bottom:9px;letter-spacing:-.01em}
+.feature-card p,.feature-card li{font-size:13px;color:var(--text2);line-height:1.65}
+.feature-card ul{list-style:none;padding:0}
+.feature-card ul li{padding:3px 0 3px 16px;position:relative}
+.feature-card ul li::before{content:'›';position:absolute;left:0;color:var(--gold);font-size:14px;font-weight:700}
+.feature-card-alt ul li::before{color:var(--cyan)}
+
+/* === TABLES === */
+.table-wrap{overflow-x:auto;border-radius:var(--r);border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead{background:var(--surface)}
+th{text-align:left;padding:11px 16px;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);border-bottom:1px solid var(--border)}
+td{padding:10px 16px;border-bottom:1px solid rgba(30,41,59,.6);color:var(--text2)}
+tr:last-child td{border-bottom:none}
+tbody tr{background:var(--bg2);transition:background .15s}
+tbody tr:nth-child(even){background:rgba(26,32,53,.5)}
+tbody tr:hover{background:var(--surface)}
+td code{font-family:'JetBrains Mono',monospace;font-size:11.5px;background:var(--bg);padding:2px 7px;border-radius:4px;color:var(--cyan);border:1px solid var(--border)}
+
+/* === CODE BLOCKS === */
+.code-block{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:16px 0;position:relative}
+.code-hdr{display:flex;align-items:center;justify-content:space-between;padding:9px 14px;background:var(--surface);border-bottom:1px solid var(--border)}
+.code-dots{display:flex;gap:5px}
+.code-dot{width:10px;height:10px;border-radius:50%}
+.code-dot:nth-child(1){background:#ef4444}
+.code-dot:nth-child(2){background:#f59e0b}
+.code-dot:nth-child(3){background:#22c55e}
+.code-copy{
+  font-size:10.5px;color:var(--text3);cursor:pointer;
+  padding:3px 8px;border-radius:4px;border:1px solid var(--border);
+  background:transparent;transition:all .2s;font-family:'JetBrains Mono',monospace;
+}
+.code-copy:hover{color:var(--cyan);border-color:var(--cyan);cursor:pointer}
+.code-block pre{padding:18px 20px;overflow-x:auto}
+.code-block code{font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.7;color:var(--text)}
+.kw{color:#c084fc}.fn{color:#4ade80}.str{color:#fde68a}.cm{color:#64748b;font-style:italic}.num{color:#a78bfa}.op{color:#f9a8d4}
+
+/* === MERMAID === */
+.mermaid-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:28px 16px;overflow-x:auto;margin:20px 0;text-align:center}
+.mermaid-wrap svg{max-width:100%;height:auto}
+.mermaid-label{font-size:11px;font-weight:600;color:var(--gold);margin-bottom:18px;text-transform:uppercase;letter-spacing:.08em}
+
+/* === FEATURE LIST === */
+.feature-list{list-style:none;padding:0}
+.feature-list>li{padding:10px 0 10px 24px;position:relative;color:var(--text2);line-height:1.65;font-size:14px;border-bottom:1px solid rgba(30,41,59,.4)}
+.feature-list>li:last-child{border-bottom:none}
+.feature-list>li::before{content:'✓';position:absolute;left:0;color:var(--cyan);font-weight:700;font-size:13px}
+.feature-list strong{color:var(--text)}
+
+/* === SUBSECTION === */
+.subsection{margin-bottom:26px}
+.subsection h3{font-size:14px;font-weight:600;color:var(--gold);margin-bottom:11px;display:flex;align-items:center;gap:8px}
+
+/* === DIR TREE === */
+.dir-tree{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:22px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.85;overflow-x:auto}
+.dir-tree .hl{color:var(--gold)}
+.dir-tree .cm{color:var(--text3);font-style:italic}
+
+/* === INLINE CODE === */
+p code,li code{font-family:'JetBrains Mono',monospace;font-size:12px;background:var(--surface);padding:1px 6px;border-radius:4px;color:var(--cyan);border:1px solid var(--border)}
+
+/* === CMD GROUP === */
+.cmd-group{margin-bottom:22px}
+.cmd-group h4{font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px;padding-left:4px;display:flex;align-items:center;gap:8px}
+
+/* === PROSE === */
+.prose{font-size:14.5px;color:var(--text2);line-height:1.8}
+.prose p{margin-bottom:16px}
+.prose strong{color:var(--text);font-weight:600}
+.prose ul,.prose ol{padding-left:22px;margin-bottom:16px}
+.prose li{margin-bottom:6px}
+
+/* === NOTE === */
+.note{
+  background:rgba(240,185,11,.04);border:1px solid rgba(240,185,11,.2);
+  border-left:3px solid var(--gold);
+  padding:13px 17px;border-radius:0 var(--rs) var(--rs) 0;
+  margin:16px 0;font-size:13px;color:var(--text2);line-height:1.65;
+}
+.note i{color:var(--gold);margin-right:8px}
+
+/* === FOOTER === */
+footer{border-top:1px solid var(--border);padding:44px 24px 36px;text-align:center;color:var(--text3);font-size:13px}
+.footer-links{display:flex;gap:20px;justify-content:center;margin-bottom:18px;flex-wrap:wrap}
+.footer-links a{color:var(--text3);transition:color .2s;font-size:13px}
+.footer-links a:hover{color:var(--gold)}
+
+/* === FOCUS VISIBLE (accessibility) === */
+:focus-visible{outline:2px solid var(--gold);outline-offset:3px;border-radius:4px}
+a:focus-visible{outline-color:var(--cyan)}
+button:focus-visible{outline-color:var(--gold)}
+
+/* === RESPONSIVE === */
+@media(max-width:920px){
+  .hero{grid-template-columns:1fr;padding:130px 28px 64px;text-align:center;gap:44px}
+  .hero-text{max-width:100%}
+  .hero-actions,.hero-stats{justify-content:center}
+  .hero-visual{order:-1}
+  .ticker-wrap{top:78px}
+}
+@media(max-width:768px){
+  nav{top:10px;left:10px;right:10px}
+  .ticker-wrap{display:none}
+  .feature-grid{grid-template-columns:1fr}
+  .section-header h2{font-size:1.25rem}
+  table{font-size:12px}
+  th,td{padding:9px 12px}
+  .hero-svg-wrap{animation:none}
+}
+@media(max-width:480px){
+  .hero-actions{flex-direction:column}
+  .hero-btn{justify-content:center}
+  .hero h1{font-size:2.1rem}
+}
+</style>
+</head>
+<body>
+
+<!-- ── PARTICLES ── -->
+<div class="particles" id="particles" aria-hidden="true"></div>
+
+<!-- ── NAV ── -->
+<nav id="navbar">
+  <div class="nav-inner">
+    <div class="nav-logo" onclick="scrollTo({top:0,behavior:'smooth'})">
+      <div class="nav-logo-icon" aria-hidden="true">
+        <!-- candlestick icon on gold bg -->
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <rect x="1.5" y="9" width="3" height="5" rx=".5" fill="#0a0800"/>
+          <line x1="3" y1="7" x2="3" y2="9" stroke="#0a0800" stroke-width="1.2"/>
+          <line x1="3" y1="14" x2="3" y2="15" stroke="#0a0800" stroke-width="1.2"/>
+          <rect x="6.5" y="4" width="3" height="7" rx=".5" fill="#0a0800"/>
+          <line x1="8" y1="1" x2="8" y2="4" stroke="#0a0800" stroke-width="1.2"/>
+          <line x1="8" y1="11" x2="8" y2="13" stroke="#0a0800" stroke-width="1.2"/>
+          <rect x="11.5" y="1.5" width="3" height="8" rx=".5" fill="#0a0800"/>
+          <line x1="13" y1="0" x2="13" y2="1.5" stroke="#0a0800" stroke-width="1.2"/>
+          <line x1="13" y1="9.5" x2="13" y2="12" stroke="#0a0800" stroke-width="1.2"/>
+        </svg>
+      </div>
+      <span>Sora Bot</span>
+    </div>
+    <a href="#overview" class="nav-link active">Overview</a>
+    <a href="#features" class="nav-link">Features</a>
+    <a href="#architecture" class="nav-link">Architecture</a>
+    <a href="#tech-stack" class="nav-link">Tech Stack</a>
+    <a href="#structure" class="nav-link">Structure</a>
+    <a href="#strategy" class="nav-link">Strategies</a>
+    <a href="#scheduler" class="nav-link">Scheduler</a>
+    <a href="#memory" class="nav-link">Memory</a>
+    <a href="#database" class="nav-link">Database</a>
+    <a href="#setup" class="nav-link">Setup</a>
+    <a href="#commands" class="nav-link">Commands</a>
+  </div>
+</nav>
+
+<!-- ── TICKER TAPE ── -->
+<div class="ticker-wrap" aria-hidden="true">
+  <div class="ticker-inner">
+    <!-- copy 1 -->
+    <span class="t-item"><span class="t-sym">AAPL</span><span class="t-up">▲ 1.24%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">NVDA</span><span class="t-up">▲ 4.18%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">BTC</span><span class="t-up">▲ 3.82%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">ETH</span><span class="t-up">▲ 2.14%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">MSFT</span><span class="t-up">▲ 1.08%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">TSLA</span><span class="t-dn">▼ 0.74%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">SPY</span><span class="t-up">▲ 0.52%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">SOL</span><span class="t-up">▲ 5.63%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">AMZN</span><span class="t-dn">▼ 0.28%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">QQQ</span><span class="t-up">▲ 0.91%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">LINK</span><span class="t-up">▲ 6.42%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">META</span><span class="t-up">▲ 2.05%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">AVAX</span><span class="t-up">▲ 4.77%</span></span><span class="t-sep">·</span>
+    <!-- copy 2 (seamless loop) -->
+    <span class="t-item"><span class="t-sym">AAPL</span><span class="t-up">▲ 1.24%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">NVDA</span><span class="t-up">▲ 4.18%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">BTC</span><span class="t-up">▲ 3.82%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">ETH</span><span class="t-up">▲ 2.14%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">MSFT</span><span class="t-up">▲ 1.08%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">TSLA</span><span class="t-dn">▼ 0.74%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">SPY</span><span class="t-up">▲ 0.52%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">SOL</span><span class="t-up">▲ 5.63%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">AMZN</span><span class="t-dn">▼ 0.28%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">QQQ</span><span class="t-up">▲ 0.91%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">LINK</span><span class="t-up">▲ 6.42%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">META</span><span class="t-up">▲ 2.05%</span></span><span class="t-sep">·</span>
+    <span class="t-item"><span class="t-sym">AVAX</span><span class="t-up">▲ 4.77%</span></span><span class="t-sep">·</span>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     HERO
+══════════════════════════════════════════ -->
+<div class="hero">
+  <!-- LEFT: text -->
+  <div class="hero-text">
+    <div class="hero-badge">
+      <span class="badge-dot"></span>
+      v2 &middot; Personal-Use &middot; AI-Powered
+    </div>
+    <h1><span class="grad">Sora Trading Bot</span><br><span style="color:var(--text2);font-size:.6em;letter-spacing:-.02em">Multi-Agent Signal Engine</span></h1>
+    <p class="hero-sub">Telegram-based AI trading signal agent for US equities &amp; crypto. Deterministic technical pipeline + 3-agent LLM debate (Bull → Bear → Analyst). Signals only — no execution, no UI.</p>
+    <div class="hero-actions">
+      <a href="#setup" class="hero-btn primary">
+        <i class="fas fa-rocket" aria-hidden="true"></i> Get Started
+      </a>
+      <a href="#overview" class="hero-btn secondary">
+        <i class="fas fa-book" aria-hidden="true"></i> Read Docs
+      </a>
+    </div>
+    <div class="hero-stats">
+      <div class="hero-stat">
+        <div class="hero-stat-num" data-count="5">0</div>
+        <div class="hero-stat-label">Strategies</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-num c" data-count="8">0</div>
+        <div class="hero-stat-label">Gate Rules</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-num" data-count="7">0</div>
+        <div class="hero-stat-label">Confidence Dims</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-num c" data-count="3">0</div>
+        <div class="hero-stat-label">LLM Agents</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-num" data-count="38">0</div>
+        <div class="hero-stat-label">Tests Passing</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: animated SVG -->
+  <div class="hero-visual">
+    <div class="hero-svg-wrap">
+      <svg class="hero-svg" viewBox="0 0 710 368" fill="none"
+           xmlns="http://www.w3.org/2000/svg"
+           role="img" aria-labelledby="svgTitle">
+        <title id="svgTitle">Signal pipeline: candlestick chart feeds Bull and Bear AI agents, both feed Analyst agent, producing a BUY signal delivered via Telegram</title>
+        <defs>
+          <!-- gradients -->
+          <linearGradient id="chartPanelBg" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#0f1629"/>
+            <stop offset="100%" stop-color="#070d1a"/>
+          </linearGradient>
+          <linearGradient id="agentPanelBg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#0a0f1e"/>
+            <stop offset="100%" stop-color="#060b16"/>
+          </linearGradient>
+          <linearGradient id="gGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#22c55e"/>
+            <stop offset="100%" stop-color="#16a34a"/>
+          </linearGradient>
+          <linearGradient id="rGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#f87171"/>
+            <stop offset="100%" stop-color="#ef4444"/>
+          </linearGradient>
+          <linearGradient id="goldGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#f0b90b"/>
+            <stop offset="100%" stop-color="#c9960a"/>
+          </linearGradient>
+          <linearGradient id="maLine" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#f0b90b" stop-opacity=".3"/>
+            <stop offset="100%" stop-color="#f0b90b" stop-opacity=".85"/>
+          </linearGradient>
+          <!-- glows -->
+          <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur stdDeviation="3" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <filter id="goldGlow" x="-40%" y="-40%" width="180%" height="180%">
+            <feGaussianBlur stdDeviation="5" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <filter id="signalGlow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="6" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <!-- arrowhead markers -->
+          <marker id="arrowGold" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+            <polygon points="0 0,7 2.5,0 5" fill="#f0b90b" opacity=".7"/>
+          </marker>
+          <marker id="arrowGreen" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+            <polygon points="0 0,7 2.5,0 5" fill="#22c55e" opacity=".7"/>
+          </marker>
+          <marker id="arrowRed" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+            <polygon points="0 0,7 2.5,0 5" fill="#ef4444" opacity=".7"/>
+          </marker>
+          <!-- clip for chart area -->
+          <clipPath id="chartClip"><rect x="10" y="10" width="268" height="340"/></clipPath>
+          <!-- dot grid pattern -->
+          <pattern id="dotGrid" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+            <circle cx="1" cy="1" r="0.8" fill="#1e293b" opacity=".6"/>
+          </pattern>
+        </defs>
+
+        <!-- ── DOT GRID BACKGROUND ── -->
+        <rect width="710" height="368" fill="url(#dotGrid)" opacity=".5"/>
+
+        <!-- ════════════════════
+             CHART PANEL
+        ════════════════════ -->
+        <!-- panel bg -->
+        <rect x="8" y="8" width="272" height="344" rx="12" fill="url(#chartPanelBg)" stroke="#1e293b" stroke-width="1"/>
+
+        <!-- header bar -->
+        <rect x="8" y="8" width="272" height="36" rx="12" fill="#111827"/>
+        <rect x="8" y="32" width="272" height="12" fill="#111827"/>
+
+        <!-- header text -->
+        <text x="22" y="30" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b" letter-spacing="0.5">AAPL · 1D · EMA+RSI</text>
+        <!-- live dot -->
+        <circle cx="256" cy="26" r="4" fill="#22c55e">
+          <animate attributeName="r" values="3;5;3" dur="2s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="1;.5;1" dur="2s" repeatCount="indefinite"/>
+        </circle>
+        <text x="262" y="30" font-family="JetBrains Mono, monospace" font-size="8" fill="#22c55e">LIVE</text>
+
+        <!-- horizontal grid lines -->
+        <g stroke="#1a2640" stroke-width="1" clip-path="url(#chartClip)">
+          <line x1="10" y1="80"  x2="278" y2="80"/>
+          <line x1="10" y1="130" x2="278" y2="130"/>
+          <line x1="10" y1="180" x2="278" y2="180"/>
+          <line x1="10" y1="230" x2="278" y2="230"/>
+          <line x1="10" y1="280" x2="278" y2="280"/>
+        </g>
+
+        <!-- entry zone band -->
+        <rect x="10" y="58" width="268" height="42" fill="#22c55e" fill-opacity=".05" clip-path="url(#chartClip)"/>
+        <line x1="10" y1="58" x2="278" y2="58" stroke="#22c55e" stroke-width=".8" stroke-dasharray="5,4" opacity=".45"/>
+        <line x1="10" y1="100" x2="278" y2="100" stroke="#22c55e" stroke-width=".6" stroke-dasharray="3,5" opacity=".25"/>
+        <text x="198" y="54" font-family="Inter, sans-serif" font-size="8.5" fill="#22c55e" opacity=".8" font-weight="500">Entry Zone</text>
+
+        <!-- volume separator -->
+        <line x1="10" y1="306" x2="278" y2="306" stroke="#1a2640" stroke-width="1"/>
+
+        <!-- ── CANDLESTICKS (10 bars, animated) ── -->
+        <g clip-path="url(#chartClip)">
+          <!-- c1 GREEN wick:272-304 body:276 h:22 -->
+          <g class="candle" style="animation-delay:.15s">
+            <line x1="33" y1="272" x2="33" y2="304" stroke="#22c55e" stroke-width="1.4" opacity=".55"/>
+            <rect x="26" y="276" width="14" height="22" rx="1" fill="url(#gGrad)"/>
+          </g>
+          <!-- c2 GREEN wick:252-288 body:256 h:26 -->
+          <g class="candle" style="animation-delay:.3s">
+            <line x1="56" y1="252" x2="56" y2="288" stroke="#22c55e" stroke-width="1.4" opacity=".55"/>
+            <rect x="49" y="256" width="14" height="26" rx="1" fill="url(#gGrad)"/>
+          </g>
+          <!-- c3 RED wick:248-283 body:250 h:22 -->
+          <g class="candle" style="animation-delay:.45s">
+            <line x1="79" y1="248" x2="79" y2="283" stroke="#ef4444" stroke-width="1.4" opacity=".55"/>
+            <rect x="72" y="250" width="14" height="22" rx="1" fill="url(#rGrad)"/>
+          </g>
+          <!-- c4 GREEN wick:218-258 body:222 h:30 -->
+          <g class="candle" style="animation-delay:.6s">
+            <line x1="102" y1="218" x2="102" y2="258" stroke="#22c55e" stroke-width="1.4" opacity=".55"/>
+            <rect x="95" y="222" width="14" height="30" rx="1" fill="url(#gGrad)"/>
+          </g>
+          <!-- c5 GREEN wick:190-232 body:194 h:28 -->
+          <g class="candle" style="animation-delay:.75s">
+            <line x1="125" y1="190" x2="125" y2="232" stroke="#22c55e" stroke-width="1.4" opacity=".55"/>
+            <rect x="118" y="194" width="14" height="28" rx="1" fill="url(#gGrad)"/>
+          </g>
+          <!-- c6 RED wick:186-226 body:188 h:22 -->
+          <g class="candle" style="animation-delay:.9s">
+            <line x1="148" y1="186" x2="148" y2="226" stroke="#ef4444" stroke-width="1.4" opacity=".55"/>
+            <rect x="141" y="188" width="14" height="22" rx="1" fill="url(#rGrad)"/>
+          </g>
+          <!-- c7 GREEN wick:145-193 body:149 h:35 -->
+          <g class="candle" style="animation-delay:1.05s">
+            <line x1="171" y1="145" x2="171" y2="193" stroke="#22c55e" stroke-width="1.4" opacity=".55"/>
+            <rect x="164" y="149" width="14" height="35" rx="1" fill="url(#gGrad)"/>
+          </g>
+          <!-- c8 GREEN wick:112-158 body:116 h:32 -->
+          <g class="candle" style="animation-delay:1.2s">
+            <line x1="194" y1="112" x2="194" y2="158" stroke="#22c55e" stroke-width="1.4" opacity=".55"/>
+            <rect x="187" y="116" width="14" height="32" rx="1" fill="url(#gGrad)"/>
+          </g>
+          <!-- c9 RED wick:108-152 body:110 h:24 -->
+          <g class="candle" style="animation-delay:1.35s">
+            <line x1="217" y1="108" x2="217" y2="152" stroke="#ef4444" stroke-width="1.4" opacity=".55"/>
+            <rect x="210" y="110" width="14" height="24" rx="1" fill="url(#rGrad)"/>
+          </g>
+          <!-- c10 GREEN — IN ENTRY ZONE — glow -->
+          <g class="candle" style="animation-delay:1.5s" filter="url(#glow)">
+            <line x1="240" y1="60" x2="240" y2="108" stroke="#22c55e" stroke-width="1.6" opacity=".9"/>
+            <rect x="233" y="64" width="14" height="36" rx="1" fill="url(#gGrad)"/>
+          </g>
+        </g>
+
+        <!-- volume bars -->
+        <g clip-path="url(#chartClip)" opacity=".38">
+          <rect x="26" y="318" width="14" height="10" rx="1" fill="#22c55e"/>
+          <rect x="49" y="316" width="14" height="12" rx="1" fill="#22c55e"/>
+          <rect x="72" y="320" width="14" height="8"  rx="1" fill="#ef4444"/>
+          <rect x="95" y="314" width="14" height="14" rx="1" fill="#22c55e"/>
+          <rect x="118" y="317" width="14" height="11" rx="1" fill="#22c55e"/>
+          <rect x="141" y="320" width="14" height="8"  rx="1" fill="#ef4444"/>
+          <rect x="164" y="312" width="14" height="16" rx="1" fill="#22c55e"/>
+          <rect x="187" y="310" width="14" height="18" rx="1" fill="#22c55e"/>
+          <rect x="210" y="319" width="14" height="9"  rx="1" fill="#ef4444"/>
+          <rect x="233" y="308" width="14" height="20" rx="1" fill="#22c55e"/>
+        </g>
+
+        <!-- MA / EMA21 line (animated draw) -->
+        <path d="M 33,275 C 78,253 102,230 148,204 C 170,186 193,130 240,78"
+              stroke="url(#maLine)" stroke-width="1.6" fill="none"
+              stroke-dasharray="380" stroke-dashoffset="380">
+          <animate attributeName="stroke-dashoffset" from="380" to="0" dur="1.8s" begin="1.8s" fill="freeze"/>
+        </path>
+
+        <!-- EMA label -->
+        <text x="245" y="73" font-family="JetBrains Mono, monospace" font-size="8" fill="#f0b90b" opacity=".7">EMA21</text>
+
+        <!-- y-axis price labels -->
+        <text x="280" y="83"  font-family="JetBrains Mono, monospace" font-size="8" fill="#475569">185</text>
+        <text x="280" y="133" font-family="JetBrains Mono, monospace" font-size="8" fill="#475569">175</text>
+        <text x="280" y="183" font-family="JetBrains Mono, monospace" font-size="8" fill="#475569">165</text>
+        <text x="280" y="233" font-family="JetBrains Mono, monospace" font-size="8" fill="#475569">155</text>
+        <text x="280" y="283" font-family="JetBrains Mono, monospace" font-size="8" fill="#475569">145</text>
+
+        <!-- signal arrow annotation on c10 -->
+        <line x1="240" y1="55" x2="240" y2="48" stroke="#22c55e" stroke-width="1.2" opacity=".8"/>
+        <polygon points="236,48 244,48 240,42" fill="#22c55e" opacity=".8"/>
+
+        <!-- ════════════════════
+             AGENT PANEL
+        ════════════════════ -->
+        <rect x="296" y="8" width="406" height="344" rx="12" fill="url(#agentPanelBg)" stroke="#1e293b" stroke-width="1"/>
+
+        <!-- panel label -->
+        <text x="310" y="28" font-family="JetBrains Mono, monospace" font-size="9" fill="#475569" letter-spacing=".8">SIGNAL PIPELINE</text>
+
+        <!-- flow arrows: chart → agents -->
+        <path d="M 282,140 C 298,130 310,110 330,100"
+              stroke="#22c55e" stroke-width="1.3" fill="none" opacity=".65"
+              stroke-dasharray="5,3" marker-end="url(#arrowGreen)">
+          <animate attributeName="stroke-dashoffset" values="0;-16" dur=".8s" repeatCount="indefinite"/>
+        </path>
+        <path d="M 282,230 C 298,242 310,262 330,272"
+              stroke="#ef4444" stroke-width="1.3" fill="none" opacity=".65"
+              stroke-dasharray="5,3" marker-end="url(#arrowRed)">
+          <animate attributeName="stroke-dashoffset" values="0;-16" dur=".8s" repeatCount="indefinite"/>
+        </path>
+
+        <!-- "Market Data" label -->
+        <text x="286" y="178" font-family="Inter, sans-serif" font-size="8" fill="#475569" text-anchor="middle">Market</text>
+        <text x="286" y="188" font-family="Inter, sans-serif" font-size="8" fill="#475569" text-anchor="middle">Data</text>
+
+        <!-- ── BULL AGENT ── cx=372 cy=100 r=34 -->
+        <g transform="translate(372,100)">
+          <!-- pulse ring -->
+          <circle r="34" fill="none" stroke="#22c55e" stroke-width="1" opacity="0">
+            <animate attributeName="r" values="34;52" dur="2.2s" repeatCount="indefinite" begin=".3s"/>
+            <animate attributeName="opacity" values=".5;0" dur="2.2s" repeatCount="indefinite" begin=".3s"/>
+          </circle>
+          <circle r="34" fill="#0a1a0e" stroke="#22c55e" stroke-width="1.5"/>
+          <text y="-10" font-family="Inter, sans-serif" font-size="9" fill="#22c55e" text-anchor="middle" font-weight="700" letter-spacing=".5">BULL</text>
+          <text y="2" font-family="Inter, sans-serif" font-size="7.5" fill="#64748b" text-anchor="middle">AGENT</text>
+          <text y="17" font-family="JetBrains Mono, monospace" font-size="12" fill="#22c55e" text-anchor="middle" font-weight="700">+74</text>
+        </g>
+
+        <!-- ── BEAR AGENT ── cx=372 cy=272 r=34 -->
+        <g transform="translate(372,272)">
+          <circle r="34" fill="none" stroke="#ef4444" stroke-width="1" opacity="0">
+            <animate attributeName="r" values="34;52" dur="2.2s" repeatCount="indefinite" begin="1.1s"/>
+            <animate attributeName="opacity" values=".5;0" dur="2.2s" repeatCount="indefinite" begin="1.1s"/>
+          </circle>
+          <circle r="34" fill="#1a0a0a" stroke="#ef4444" stroke-width="1.5"/>
+          <text y="-10" font-family="Inter, sans-serif" font-size="9" fill="#ef4444" text-anchor="middle" font-weight="700" letter-spacing=".5">BEAR</text>
+          <text y="2" font-family="Inter, sans-serif" font-size="7.5" fill="#64748b" text-anchor="middle">AGENT</text>
+          <text y="17" font-family="JetBrains Mono, monospace" font-size="12" fill="#ef4444" text-anchor="middle" font-weight="700">−26</text>
+        </g>
+
+        <!-- debate score label -->
+        <text x="438" y="175" font-family="Inter, sans-serif" font-size="8" fill="#64748b" text-anchor="middle">bear→bull</text>
+        <text x="438" y="186" font-family="JetBrains Mono, monospace" font-size="9" fill="#f0b90b" text-anchor="middle" font-weight="600">score: 68</text>
+
+        <!-- flow arrows: agents → analyst -->
+        <path d="M 408,100 C 450,100 472,158 500,175"
+              stroke="#22c55e" stroke-width="1.2" fill="none" opacity=".5"
+              stroke-dasharray="5,3" marker-end="url(#arrowGreen)">
+          <animate attributeName="stroke-dashoffset" values="0;-16" dur=".8s" repeatCount="indefinite"/>
+        </path>
+        <path d="M 408,272 C 450,272 472,214 500,187"
+              stroke="#ef4444" stroke-width="1.2" fill="none" opacity=".5"
+              stroke-dasharray="5,3" marker-end="url(#arrowRed)">
+          <animate attributeName="stroke-dashoffset" values="0;-16" dur=".8s" repeatCount="indefinite"/>
+        </path>
+
+        <!-- ── ANALYST AGENT ── cx=548 cy=182 r=44 -->
+        <g transform="translate(548,182)" filter="url(#goldGlow)">
+          <!-- outer pulse -->
+          <circle r="44" fill="none" stroke="#f0b90b" stroke-width="1.2" opacity="0">
+            <animate attributeName="r" values="44;62" dur="2.8s" repeatCount="indefinite"/>
+            <animate attributeName="opacity" values=".45;0" dur="2.8s" repeatCount="indefinite"/>
+          </circle>
+          <circle r="44" fill="#1a1400" stroke="url(#goldGrad)" stroke-width="2"/>
+          <!-- confidence arc -->
+          <circle r="38" fill="none" stroke="#f0b90b" stroke-width="3" opacity=".2" stroke-dasharray="239"/>
+          <circle r="38" fill="none" stroke="#f0b90b" stroke-width="3" opacity=".7"
+                  stroke-dasharray="196 43" stroke-dashoffset="60" stroke-linecap="round"/>
+          <text y="-14" font-family="Inter, sans-serif" font-size="8.5" fill="#f0b90b" text-anchor="middle" font-weight="700" letter-spacing=".5">ANALYST</text>
+          <text y="-3" font-family="Inter, sans-serif" font-size="7" fill="#64748b" text-anchor="middle">AGENT</text>
+          <text y="14" font-family="JetBrains Mono, monospace" font-size="16" fill="#f0b90b" text-anchor="middle" font-weight="800">BUY</text>
+          <text y="27" font-family="JetBrains Mono, monospace" font-size="8" fill="#94a3b8" text-anchor="middle">conf: 82%</text>
+        </g>
+
+        <!-- flow arrow: analyst → signal badge -->
+        <path d="M 592,182 L 640,182"
+              stroke="#f0b90b" stroke-width="2" fill="none" marker-end="url(#arrowGold)">
+          <animate attributeName="opacity" values=".4;1;.4" dur="1.5s" repeatCount="indefinite"/>
+        </path>
+
+        <!-- ── SIGNAL BADGE ── -->
+        <g filter="url(#signalGlow)">
+          <rect x="640" y="152" width="64" height="60" rx="10"
+                fill="#0f1a06" stroke="#22c55e" stroke-width="1.8"/>
+          <!-- pulse outer ring -->
+          <rect x="640" y="152" width="64" height="60" rx="10"
+                fill="none" stroke="#22c55e" stroke-width="1" opacity="0">
+            <animate attributeName="stroke-width" values="1;4;1" dur="2s" repeatCount="indefinite"/>
+            <animate attributeName="opacity" values=".6;0;.6" dur="2s" repeatCount="indefinite"/>
+          </rect>
+          <text x="672" y="172" font-family="JetBrains Mono, monospace" font-size="8" fill="#64748b" text-anchor="middle">SIGNAL</text>
+          <text x="672" y="192" font-family="Inter, sans-serif" font-size="18" fill="#22c55e" text-anchor="middle" font-weight="900">BUY</text>
+          <text x="672" y="206" font-family="JetBrains Mono, monospace" font-size="7.5" fill="#f0b90b" text-anchor="middle">R:R 2.4:1</text>
+        </g>
+
+        <!-- Telegram delivery label -->
+        <text x="672" y="228" font-family="Inter, sans-serif" font-size="8" fill="#475569" text-anchor="middle">→ Telegram</text>
+
+        <!-- R:R label above arrow -->
+        <text x="438" y="80" font-family="JetBrains Mono, monospace" font-size="8" fill="#475569" text-anchor="middle">Bull thesis</text>
+        <text x="438" y="292" font-family="JetBrains Mono, monospace" font-size="8" fill="#475569" text-anchor="middle">Bear risks</text>
+
+      </svg>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     MAIN CONTENT
+══════════════════════════════════════════ -->
+<div class="content">
+
+<!-- ── OVERVIEW ── -->
+<section id="overview" class="reveal">
+  <div class="section-header">
+    <div class="section-icon"><i class="fas fa-info-circle" aria-hidden="true"></i></div>
+    <h2>Overview</h2>
+    <span class="accent-line"></span>
+  </div>
+  <div class="prose">
+    <p>Sora is an automated trading signal generator running as a single asyncio Python process. It combines a deterministic technical analysis engine with a multi-agent LLM debate system to produce high-quality trading signals for US equities (via Alpaca) and cryptocurrencies (via Binance/CoinGecko).</p>
+    <p>Core principle: <strong>trade less, trade higher quality</strong>. Every signal passes through multiple quality gates — technical indicators, market regime detection, confidence scoring, confluence validation, and a hard 8-rule gate — before delivery via Telegram.</p>
+    <p><strong>Key architectural decisions:</strong></p>
+    <ul>
+      <li>Single-process asyncio — no external broker or task queue</li>
+      <li>SQLite for persistence — no database server required</li>
+      <li>All confidence scores deterministic and explainable</li>
+      <li>LLM is augmentation layer, not core decision-maker</li>
+      <li>Resilient to data source failures (graceful fallbacks throughout)</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ── FEATURES ── -->
+<section id="features" class="reveal">
+  <div class="section-header">
+    <div class="section-icon"><i class="fas fa-star" aria-hidden="true"></i></div>
+    <h2>Features</h2>
+    <span class="accent-line"></span>
+  </div>
+
+  <div class="subsection">
+    <h3><i class="fas fa-globe" aria-hidden="true"></i> Multi-Market Coverage</h3>
+    <ul class="feature-list">
+      <li><strong>US equities:</strong> NASDAQ/NYSE symbols via Alpaca Markets API (daily OHLCV bars)</li>
+      <li><strong>Cryptocurrency:</strong> BTC, ETH, SOL, BNB, AVAX, LINK, DOT, MATIC, ADA, XRP via Binance public API (no key required)</li>
+      <li><strong>Market regime detection</strong> using SPY (equities) or BTC (crypto) as proxies</li>
+    </ul>
+  </div>
+
+  <div class="subsection">
+    <h3><i class="fas fa-chart-line" aria-hidden="true"></i> Five Built-in Trading Strategies</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Strategy</th><th>Category</th><th>Difficulty</th><th>Regimes</th><th>Risk</th></tr></thead>
+        <tbody>
+          <tr><td>EMA + RSI + Volume</td><td>Trend</td><td>Easy</td><td>BULL, NEUTRAL</td><td>6%/12%</td></tr>
+          <tr><td>Supertrend + MACD</td><td>Trend</td><td>Medium</td><td>BULL, VOLATILE, NEUTRAL</td><td>5%/10%</td></tr>
+          <tr><td>Bollinger Squeeze</td><td>Breakout</td><td>Medium</td><td>BULL, VOLATILE, RANGING</td><td>7%/14%</td></tr>
+          <tr><td>RSI Mean Reversion</td><td>Mean Reversion</td><td>Easy</td><td>RANGING, VOLATILE, NEUTRAL</td><td>4%/7%</td></tr>
+          <tr><td>VWAP Momentum</td><td>Intraday</td><td>Advanced</td><td>BULL, NEUTRAL, VOLATILE</td><td>5%/10%</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="feature-grid">
+    <div class="feature-card">
+      <div class="feature-card-icon"><i class="fas fa-sliders-h" aria-hidden="true"></i></div>
+      <h3>Deterministic Confidence Scoring</h3>
+      <p>Seven explainable dimensions weighted to produce a 0–100 score:</p>
+      <ul>
+        <li>Trend strength (ADX, EMA alignment)</li>
+        <li>Signal alignment (RSI, MACD, Bollinger Bands)</li>
+        <li>Volatility quality (ATR % of price)</li>
+        <li>Volume confirmation (ratio, trend)</li>
+        <li>Market regime fit</li>
+        <li>Historical performance (win rate, Sharpe)</li>
+        <li>Drawdown state</li>
+      </ul>
+    </div>
+
+    <div class="feature-card feature-card-alt">
+      <div class="feature-card-icon"><i class="fas fa-wave-square" aria-hidden="true"></i></div>
+      <h3>Market Regime Detection</h3>
+      <p>Classifies market as BULL, BEAR, NEUTRAL, RANGING, or VOLATILE using ADX, trend slope, and volatility vs historical baseline. Each regime influences eligible strategies and confidence calculation.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-icon"><i class="fas fa-check-double" aria-hidden="true"></i></div>
+      <h3>Confluence Validation</h3>
+      <p>Before accepting any signal, validates that technical factors agree: ADX strength, EMA alignment, RSI consistency, volume confirmation, and regime compatibility. Alignment ratio must be &ge;50%.</p>
+    </div>
+
+    <div class="feature-card feature-card-alt">
+      <div class="feature-card-icon"><i class="fas fa-shield-alt" aria-hidden="true"></i></div>
+      <h3>Signal Gate (8 Hard Rules)</h3>
+      <p>Pre-notification filter all BUY/SELL signals must pass:</p>
+      <ul>
+        <li>Mandatory: R:R &ge; 1.5:1, entry zone active</li>
+        <li>Scorecard: confidence floor, RSI max, volume confirm, catalyst cooldown, SL sanity</li>
+        <li>Allows 1 failure out of 5 scorecard checks</li>
+      </ul>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-icon"><i class="fas fa-users" aria-hidden="true"></i></div>
+      <h3>Multi-Agent LLM Debate</h3>
+      <ul>
+        <li>Bull Agent: builds strongest bullish case</li>
+        <li>Bear Agent: stress-tests bull thesis, finds hidden risks</li>
+        <li>Analyst Agent: synthesizes debate → final verdict</li>
+        <li>Debate scoring: Bear rates bull thesis 0–100</li>
+      </ul>
+    </div>
+
+    <div class="feature-card feature-card-alt">
+      <div class="feature-card-icon"><i class="fas fa-layer-group" aria-hidden="true"></i></div>
+      <h3>Moomoo Framework</h3>
+      <p>5-step structured analysis: Objective → Data Collection → Multi-Dimensional Analysis → Synthesis → Structured Report. Includes valuation, entry strategy, and risk management.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-icon"><i class="fas fa-filter" aria-hidden="true"></i></div>
+      <h3>Pre-Execution Filters</h3>
+      <ul>
+        <li>Earnings calendar proximity (blackout within 3 days)</li>
+        <li>Liquidity check (min 300K avg vol, penny stock filter)</li>
+        <li>Volume environment (dead market, spike detection)</li>
+        <li>Bid-ask spread check</li>
+        <li>ATR pre-gate (min 0.3% daily range)</li>
+        <li>Earnings proximity guard (HIGH risk flag ≤5 days)</li>
+      </ul>
+    </div>
+
+    <div class="feature-card feature-card-alt">
+      <div class="feature-card-icon"><i class="fas fa-sync-alt" aria-hidden="true"></i></div>
+      <h3>Automated Scanning</h3>
+      <ul>
+        <li>US equities: pre-market (8:30 ET) + pre-close (15:00 ET)</li>
+        <li>Crypto: every 4 hours</li>
+        <li>Position monitoring: 30 min (US), 2 hours (crypto)</li>
+        <li>Weekly review: autonomous strategy evaluation</li>
+      </ul>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-icon"><i class="fas fa-map-pin" aria-hidden="true"></i></div>
+      <h3>Position Tracking</h3>
+      <ul>
+        <li>Log entries with price, SL, TP, qty</li>
+        <li>Automatic SL/TP monitoring and alerts</li>
+        <li>Close positions on SL hit or TP reached</li>
+      </ul>
+    </div>
+
+    <div class="feature-card feature-card-alt">
+      <div class="feature-card-icon"><i class="fas fa-brain" aria-hidden="true"></i></div>
+      <h3>LLM-Powered Memory</h3>
+      <ul>
+        <li>Karpathy-style wiki: persistent LLM-maintained files</li>
+        <li>Wiki ingestion: notes and feedback merged automatically</li>
+        <li>Wiki linting: automated consistency checking</li>
+        <li>Autoresearch loop: weekly review of signal accuracy</li>
+      </ul>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-icon"><i class="fas fa-user" aria-hidden="true"></i></div>
+      <h3>User Profile</h3>
+      <p>Auto-extracted from wiki: risk tolerance, preferred timeframes, favorite strategies, max position size, common mistakes.</p>
+    </div>
+
+    <div class="feature-card feature-card-alt">
+      <div class="feature-card-icon"><i class="fas fa-redo" aria-hidden="true"></i></div>
+      <h3>Feedback Loop</h3>
+      <ul>
+        <li>Trade outcomes logged (took/skip/partial + reasons)</li>
+        <li>Signal outcomes tracked (3d, 7d, 14d returns)</li>
+        <li>Outcome-adjusted conviction fed into LLM context</li>
+        <li>Lessons extracted from user behavior patterns</li>
+      </ul>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-icon"><i class="fas fa-comment-dots" aria-hidden="true"></i></div>
+      <h3>Telegram Chat Interface</h3>
+      <ul>
+        <li>Free-form trading chat with LLM-powered responses</li>
+        <li>Tool-using agent: analyze, signals, watchlist, lessons</li>
+        <li>Chat history maintained for conversational context</li>
+      </ul>
+    </div>
+
+    <div class="feature-card feature-card-alt">
+      <div class="feature-card-icon"><i class="fas fa-file-alt" aria-hidden="true"></i></div>
+      <h3>Rich Signal Reports</h3>
+      <ul>
+        <li>HTML-formatted messages with entry zones, exit targets, R:R</li>
+        <li>Confidence breakdown visualization</li>
+        <li>Technical condition assessment (RSI, Stoch, Williams %R)</li>
+        <li>Full LLM reports with bull case, bear case, catalysts</li>
+      </ul>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-icon"><i class="fas fa-chart-bar" aria-hidden="true"></i></div>
+      <h3>Chart Generation</h3>
+      <ul>
+        <li>Candlestick charts via matplotlib/mplfinance</li>
+        <li>EMA21 and EMA55 overlays</li>
+        <li>Entry zone highlight (green band)</li>
+        <li>SL and TP levels annotated</li>
+        <li>Dark theme (dark background, green/red candles)</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ── ARCHITECTURE ── -->
+<section id="architecture" class="reveal">
+  <div class="section-header">
+    <div class="section-icon"><i class="fas fa-sitemap" aria-hidden="true"></i></div>
+    <h2>Architecture</h2>
+    <span class="accent-line"></span>
+  </div>
+
+  <p class="mermaid-label">System Architecture</p>
+  <div class="mermaid-wrap">
+    <div class="mermaid">
+graph TB
+    subgraph Entry
+        BOT[bot.py &lt;br/&gt;asyncio Runner]
+    end
+    subgraph Telegram
+        TH[TelegramHandler]
+        FMT[formatter.py]
+        CHART[chart.py]
+    end
+    subgraph Engine
+        ORCH[orchestrator.py]
+        STRAT[strategies.py]
+        CONF[confidence.py]
+        REG[regime.py]
+        FILT[filters.py]
+        GATE[signal_gate.py]
+    end
+    subgraph Data
+        US[us_feed.py &lt;br/&gt;Alpaca]
+        CRYPTO[crypto_feed.py &lt;br/&gt;Binance]
+    end
+    subgraph Analysis
+        NEWS[news.py]
+        SENT[sentiment.py]
+        FUND[fundamental.py]
+        EARN[earnings.py]
+        BRD[breadth.py]
+        MOOMOO[moomoo.py]
+    end
+    subgraph LLM
+        CLIENT[client.py &lt;br/&gt;OpenRouter]
+        ANALYST[analyst.py &lt;br/&gt;Bull/Bear/Analyst]
+        REP[reporter.py]
+    end
+    subgraph Memory
+        WIKI[wiki.py]
+        LEARN[learner.py]
+        FB[feedback.py]
+        PROF[profile.py]
+    end
+    subgraph Scheduler
+        DMN[daemon.py]
+    end
+    subgraph Database
+        DB[(SQLite sora.db)]
+    end
+    BOT --> TH
+    BOT --> DMN
+    TH --> ORCH
+    DMN --> ORCH
+    ORCH --> US & CRYPTO & REG & STRAT & CONF & GATE & NEWS & FUND & BRD & EARN & WIKI & ANALYST
+    ANALYST --> CLIENT & MOOMOO
+    TH --> CLIENT & FMT & CHART & DB
+    DMN --> DB & NEWS & WIKI
+    LEARN --> DB & WIKI
+    FB --> WIKI & DB
+    PROF --> WIKI & DB
+    WIKI -.->|files| KNOWLEDGE[(knowledge/wiki/)]
+    </div>
+  </div>
+
+  <p class="mermaid-label" style="margin-top:36px">Signal Pipeline Flow</p>
+  <div class="mermaid-wrap">
+    <div class="mermaid">
+flowchart LR
+    START([Symbol]) --> FETCH{Market?}
+    FETCH -->|US| ALPACA[Alpaca 90d bars]
+    FETCH -->|Crypto| BINANCE[Binance 90d bars]
+    ALPACA & BINANCE --> IND[Indicator Engine]
+    IND --> REG[Regime Detection &lt;br/&gt;ADX + Trend + Vol]
+    IND --> STRAT[Strategy Selector]
+    REG & STRAT --> CONF[Confidence Engine &lt;br/&gt;7 dimensions]
+    CONF -->|rejected| H1[HOLD]
+    CONF --> CONFL[Confluence Validator]
+    CONFL -->|&lt;50%| H2[HOLD]
+    CONFL --> GATE[Signal Gate 8 rules]
+    GATE -->|failed| H3[HOLD]
+    GATE --> LLM{Full analysis?}
+    LLM -->|yes| BULL[Bull Agent] --> BEAR[Bear Agent] --> ANALYST[Analyst Agent] --> VERDICT[BUY/SELL/HOLD]
+    LLM -->|no| DIRECT[Direct Signal]
+    VERDICT & DIRECT --> DELIVERY[Telegram Report + Chart PNG]
+    DELIVERY --> DB[(SQLite)]
+    </div>
+  </div>
+
+  <p class="mermaid-label" style="margin-top:36px">LLM Agent Sequence</p>
+  <div class="mermaid-wrap">
+    <div class="mermaid">
+sequenceDiagram
+    participant P as Pipeline
+    participant B as Bull Agent
+    participant BE as Bear Agent
+    participant A as Analyst Agent
+    participant LLM as OpenRouter LLM
+    P->>B: Market data + indicators + news + fundamentals + wiki + breadth + signal history
+    Note over B: Build strongest bullish case
+    B->>LLM: complete_json(prompt)
+    LLM-->>B: bull_thesis, bull_confidence, key_catalysts
+    P->>BE: Same context + bull thesis
+    Note over BE: Stress-test bull thesis
+    BE->>LLM: complete_json(prompt)
+    LLM-->>BE: bear_thesis, bear_confidence, key_risks, bear_score_of_bull
+    Note over P: bear_score_of_bull &lt;40 → weight bear; &gt;70 → bear concedes
+    P->>A: Full context + bull + bear results
+    Note over A: Synthesize debate → final verdict
+    A->>LLM: complete_json(prompt)
+    LLM-->>A: verdict, confidence, entry_zone, exit, stop_loss, rr_ratio
+    A-->>P: Structured signal dict
+    </div>
+  </div>
+</section>
+
+<!-- ── TECH STACK ── -->
+<section id="tech-stack" class="reveal">
+  <div class="section-header">
+    <div class="section-icon"><i class="fas fa-cubes" aria-hidden="true"></i></div>
+    <h2>Tech Stack</h2>
+    <span class="accent-line"></span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Component</th><th>Technology</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td>Runtime</td><td><code>Python 3.14+ asyncio</code></td><td>Single-process event loop</td></tr>
+        <tr><td>Telegram Bot</td><td><code>python-telegram-bot / httpx</code></td><td>Message delivery and command handling</td></tr>
+        <tr><td>US Market Data</td><td><code>alpaca-py</code></td><td>Daily OHLCV bars for US equities</td></tr>
+        <tr><td>Crypto Data</td><td><code>Binance public API</code></td><td>Daily OHLCV bars for cryptocurrency</td></tr>
+        <tr><td>Regime Data</td><td><code>Alpaca (SPY) / CoinGecko (BTC)</code></td><td>Market regime detection reference</td></tr>
+        <tr><td>News</td><td><code>Yahoo Finance RSS / CryptoPanic RSS</code></td><td>News headline aggregation</td></tr>
+        <tr><td>Fundamentals</td><td><code>Financial Modeling Prep (FMP)</code></td><td>P/E, revenue, insider trading, valuation</td></tr>
+        <tr><td>Earnings Calendar</td><td><code>yfinance</code></td><td>Earnings proximity detection</td></tr>
+        <tr><td>Market Breadth</td><td><code>yfinance (S&amp;P 500 BPI)</code></td><td>Bullish Percent Index</td></tr>
+        <tr><td>Charts</td><td><code>matplotlib / mplfinance</code></td><td>Candlestick PNG generation</td></tr>
+        <tr><td>LLM API</td><td><code>OpenRouter (httpx)</code></td><td>Multi-model access via single API</td></tr>
+        <tr><td>Database</td><td><code>SQLite (sqlite3)</code></td><td>Persistent storage, no DB server</td></tr>
+        <tr><td>Scheduler</td><td><code>Custom asyncio loop</code></td><td>Cron-based market scanning</td></tr>
+        <tr><td>Logging</td><td><code>logging + custom formatter</code></td><td>Structured log output</td></tr>
+        <tr><td>Config</td><td><code>python-dotenv</code></td><td>Environment variable management</td></tr>
+        <tr><td>Testing</td><td><code>pytest / pytest-asyncio</code></td><td>38-test suite</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ── PROJECT STRUCTURE ── -->
+<section id="structure" class="reveal">
+  <div class="section-header">
+    <div class="section-icon"><i class="fas fa-folder-tree" aria-hidden="true"></i></div>
+    <h2>Project Structure</h2>
+    <span class="accent-line"></span>
+  </div>
+  <div class="dir-tree">
+<span class="hl">noor-telegram-bot/</span>
+  <span class="hl">bot.py</span>                      <span class="cm"># Entry point — asyncio runner</span>
+  <span class="hl">log.py</span>                      <span class="cm"># Colored logging formatter</span>
+
+  <span class="hl">engine/</span>
+    <span class="hl">orchestrator.py</span>            <span class="cm"># Main signal pipeline</span>
+    <span class="hl">strategies.py</span>              <span class="cm"># 5 built-in trading strategies</span>
+    <span class="hl">confidence.py</span>              <span class="cm"># 7-dimension confidence engine</span>
+    <span class="hl">regime.py</span>                  <span class="cm"># Market regime detection</span>
+    <span class="hl">filters.py</span>                 <span class="cm"># Pre-execution filters</span>
+    <span class="hl">signal_gate.py</span>             <span class="cm"># Hard pre-notification gate (8 rules)</span>
+
+  <span class="hl">telegram/</span>
+    <span class="hl">handler.py</span>                 <span class="cm"># Telegram bot — 20+ slash commands</span>
+    <span class="hl">formatter.py</span>               <span class="cm"># HTML formatters for signal reports</span>
+    <span class="hl">chart.py</span>                   <span class="cm"># Candlestick chart generator</span>
+
+  <span class="hl">data/</span>
+    <span class="hl">us_feed.py</span>                 <span class="cm"># US equities OHLCV via Alpaca</span>
+    <span class="hl">crypto_feed.py</span>             <span class="cm"># Crypto OHLCV via Binance</span>
+
+  <span class="hl">analysis/</span>
+    <span class="hl">news.py</span>                    <span class="cm"># Yahoo + CryptoPanic RSS</span>
+    <span class="hl">sentiment.py</span>               <span class="cm"># Keyword-based sentiment</span>
+    <span class="hl">fundamental.py</span>             <span class="cm"># Fundamentals via FMP</span>
+    <span class="hl">earnings.py</span>                <span class="cm"># Earnings proximity guard</span>
+    <span class="hl">breadth.py</span>                 <span class="cm"># S&amp;P 500 Bullish Percent Index</span>
+    <span class="hl">moomoo.py</span>                  <span class="cm"># 5-step structured analysis</span>
+
+  <span class="hl">llm/</span>
+    <span class="hl">client.py</span>                  <span class="cm"># OpenRouter client with caching</span>
+    <span class="hl">analyst.py</span>                 <span class="cm"># Bull / Bear / Analyst agents</span>
+    <span class="hl">reporter.py</span>                <span class="cm"># Signal report builder</span>
+
+  <span class="hl">db/</span>
+    <span class="hl">store.py</span>                   <span class="cm"># SQLite persistence (8 tables)</span>
+
+  <span class="hl">scheduler/</span>
+    <span class="hl">daemon.py</span>                  <span class="cm"># Asyncio cron daemon</span>
+
+  <span class="hl">memory/</span>
+    <span class="hl">wiki.py</span>                    <span class="cm"># Karpathy-style LLM wiki</span>
+    <span class="hl">learner.py</span>                 <span class="cm"># Weekly review agent</span>
+    <span class="hl">feedback.py</span>                <span class="cm"># Trade feedback processor</span>
+    <span class="hl">profile.py</span>                 <span class="cm"># User profile extraction</span>
+
+  <span class="hl">knowledge/</span>
+    <span class="hl">wiki/</span>                      <span class="cm"># LLM-maintained wiki files</span>
+    <span class="hl">raw/</span>                       <span class="cm"># Raw input log</span>
+
+  <span class="hl">tests/</span>                       <span class="cm"># pytest — 38 tests all green</span>
+  <span class="hl">docs/</span>                        <span class="cm"># Documentation artifacts</span>
+  <span class="hl">graphify-out/</span>                <span class="cm"># Knowledge graph visualization</span>
+  </div>
+</section>
+
+<!-- ── STRATEGY ENGINE ── -->
+<section id="strategy" class="reveal">
+  <div class="section-header">
+    <div class="section-icon"><i class="fas fa-cogs" aria-hidden="true"></i></div>
+    <h2>Strategy Engine</h2>
+    <span class="accent-line"></span>
+  </div>
+  <div class="prose">
+    <p>Strategy engine uses <strong>conditional scoring</strong>. Each strategy defines boolean checks, counts how many pass, and computes <code>(conditions_met / total_checks) * 100</code>. A minimum threshold must be met for signal emission.</p>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Strategy</th><th>Category</th><th>Difficulty</th><th>Compatible Regimes</th><th>Min Conditions</th><th>Risk (SL/TP)</th></tr></thead>
+      <tbody>
+        <tr><td>EMA + RSI + Volume</td><td>Trend</td><td>Easy</td><td>BULL, NEUTRAL</td><td>4/6</td><td>6%/12%</td></tr>
+        <tr><td>Supertrend + MACD</td><td>Trend</td><td>Medium</td><td>BULL, VOLATILE, NEUTRAL</td><td>3/5</td><td>5%/10%</td></tr>
+        <tr><td>Bollinger Squeeze</td><td>Breakout</td><td>Medium</td><td>BULL, VOLATILE, RANGING</td><td>3/5</td><td>7%/14%</td></tr>
+        <tr><td>RSI Mean Reversion</td><td>Mean Rev.</td><td>Easy</td><td>RANGING, VOLATILE, NEUTRAL</td><td>2/4</td><td>4%/7%</td></tr>
+        <tr><td>VWAP Momentum</td><td>Intraday</td><td>Advanced</td><td>BULL, NEUTRAL, VOLATILE</td><td>3/5</td><td>5%/10%</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note"><i class="fas fa-info-circle" aria-hidden="true"></i> <code>StrategySelector</code> iterates all regime-compatible strategies, evaluates each, selects highest blended score (signal confidence weighted against optional historical confidence).</div>
+</section>
+
+<!-- ── SCHEDULER ── -->
+<section id="scheduler" class="reveal">
+  <div class="section-header">
+    <div class="section-icon"><i class="fas fa-clock" aria-hidden="true"></i></div>
+    <h2>Scheduler</h2>
+    <span class="accent-line"></span>
+  </div>
+  <div class="prose"><p>Daemon runs a 30-second polling loop and triggers scans based on time and market conditions:</p></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Scan</th><th>Schedule</th><th>Market</th><th>Symbols</th></tr></thead>
+      <tbody>
+        <tr><td>US Pre-market</td><td>8:30 AM ET (trading days)</td><td>US</td><td>Watchlist (market=us)</td></tr>
+        <tr><td>US Pre-close</td><td>3:00 PM ET (trading days)</td><td>US</td><td>Watchlist (market=us)</td></tr>
+        <tr><td>Crypto</td><td>Every 4 hours, :00</td><td>Crypto</td><td>Watchlist (market=crypto)</td></tr>
+        <tr><td>Position Scan (US)</td><td>Every 30 min during market hours</td><td>US</td><td>Open positions</td></tr>
+        <tr><td>Position Scan (Crypto)</td><td>Every 2 hours at :30</td><td>Crypto</td><td>Open positions</td></tr>
+        <tr><td>News Scan</td><td>After each market scan</td><td>Per market</td><td>Scanned symbols</td></tr>
+        <tr><td>Weekly Review</td><td>Sunday 20:00 ET</td><td>All</td><td>All signals</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note"><i class="fas fa-info-circle" aria-hidden="true"></i> Scheduler is NYSE holiday-aware. Entry zones tightened to real-time price (±0.3% US, ±0.5% crypto).</div>
+</section>
+
+<!-- ── MEMORY SYSTEM ── -->
+<section id="memory" class="reveal">
+  <div class="section-header">
+    <div class="section-icon"><i class="fas fa-database" aria-hidden="true"></i></div>
+    <h2>Memory System</h2>
+    <span class="accent-line"></span>
+  </div>
+  <div class="prose"><p>Implements a Karpathy-style LLM wiki: persistent markdown files read-and-updated by the LLM itself each cycle.</p></div>
+  <div class="dir-tree">
+<span class="hl">knowledge/</span>
+  <span class="hl">wiki/</span>
+    <span class="hl">strategy.md</span>        <span class="cm"># Active trading strategies and rules</span>
+    <span class="hl">patterns.md</span>        <span class="cm"># Chart patterns the LLM has identified</span>
+    <span class="hl">lessons.md</span>         <span class="cm"># Accumulated lessons from review cycles</span>
+    <span class="hl">regime.md</span>          <span class="cm"># Market regime observations</span>
+    <span class="hl">symbols/</span>
+      <span class="hl">AAPL.md</span>          <span class="cm"># Per-symbol wiki pages</span>
+      <span class="hl">BTC.md</span>
+  <span class="hl">raw/</span>
+    <span class="hl">inputs.log</span>         <span class="cm"># Raw input log for audit trail</span>
+  </div>
+
+  <div class="subsection" style="margin-top:22px">
+    <h3>Wiki Ingestion</h3>
+    <p class="prose">When user submits a note or trade feedback, LLM reads current wiki + new input, decides which sections to update, returns JSON mapping filenames to full new content. Only changed files written.</p>
+  </div>
+  <div class="subsection">
+    <h3>Wiki Linting</h3>
+    <p class="prose">LLM-driven audit checks for contradictions, stale claims, orphan pages, data gaps. Returns structured issue report with severity levels.</p>
+  </div>
+  <div class="subsection">
+    <h3>Weekly Review</h3>
+    <p class="prose">ReviewAgent evaluates all signals from past week against actual outcomes, identifies which strategies over/underperformed, updates confidence weights, extracts new behavioral patterns. Results merged into <code>lessons.md</code>.</p>
+  </div>
+</section>
+
+<!-- ── DATABASE ── -->
+<section id="database" class="reveal">
+  <div class="section-header">
+    <div class="section-icon"><i class="fas fa-table" aria-hidden="true"></i></div>
+    <h2>Database</h2>
+    <span class="accent-line"></span>
+  </div>
+  <div class="prose"><p>SQLite database (<code>sora.db</code>) with 8 tables:</p></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Table</th><th>Purpose</th><th>Key Columns</th></tr></thead>
+      <tbody>
+        <tr><td><code>watchlist</code></td><td>Symbols to scan</td><td>symbol, market, added_at</td></tr>
+        <tr><td><code>signals</code></td><td>Generated signals</td><td>symbol, verdict, confidence, entry_low/high, exit_target, stop_loss, rr_ratio, strategy, regime</td></tr>
+        <tr><td><code>signal_outcomes</code></td><td>Actual returns</td><td>signal_id, actual_return_3d/7d/14d</td></tr>
+        <tr><td><code>user_feedback</code></td><td>Trade actions</td><td>symbol, action (took/skip/partial), reason, emotional_state</td></tr>
+        <tr><td><code>user_profile</code></td><td>Trading profile</td><td>profile_json (blob)</td></tr>
+        <tr><td><code>agent_lessons</code></td><td>LLM-learned lessons</td><td>lesson_type, symbol, pattern, confidence_impact</td></tr>
+        <tr><td><code>llm_cache</code></td><td>LLM response cache</td><td>input_hash, output, model, expires_at</td></tr>
+        <tr><td><code>positions</code></td><td>Open/closed positions</td><td>symbol, entry_price, qty, stop_loss, take_profit, status</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ── SETUP ── -->
+<section id="setup" class="reveal">
+  <div class="section-header">
+    <div class="section-icon"><i class="fas fa-rocket" aria-hidden="true"></i></div>
+    <h2>Installation</h2>
+    <span class="accent-line"></span>
+  </div>
+  <div class="prose"><p>Clone, install, configure, run in minutes:</p></div>
+  <div class="code-block">
+    <div class="code-hdr">
+      <div class="code-dots"><span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span></div>
+      <button class="code-copy" onclick="copyCode(this)" aria-label="Copy code">copy</button>
+    </div>
+    <pre><code><span class="cm"># Clone the repository</span>
+git <span class="kw">clone</span> &lt;repository-url&gt;
+<span class="fn">cd</span> noor-telegram-bot
+
+<span class="cm"># Create virtual environment</span>
+python -m venv .venv
+<span class="fn">source</span> .venv/bin/activate   <span class="cm"># Windows: .venv\Scripts\activate</span>
+
+<span class="cm"># Install dependencies</span>
+pip install -r requirements.txt
+
+<span class="cm"># Configure environment</span>
+cp .env.template .env
+<span class="cm"># Edit .env with your API keys</span>
+
+<span class="cm"># Initialize the database</span>
+python -c <span class="str">"from db.store import init_db; init_db()"</span>
+
+<span class="cm"># Start the bot</span>
+python bot.py</code></pre>
+  </div>
+
+  <div class="section-header" style="margin-top:48px">
+    <div class="section-icon"><i class="fas fa-key" aria-hidden="true"></i></div>
+    <h2>Configuration</h2>
+    <span class="accent-line"></span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Variable</th><th>Required</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>TELEGRAM_BOT_TOKEN</code></td><td>Yes</td><td>Telegram bot token from @BotFather</td></tr>
+        <tr><td><code>TELEGRAM_CHAT_ID</code></td><td>Yes</td><td>Target chat ID for signal delivery</td></tr>
+        <tr><td><code>OPENROUTER_API_KEY</code></td><td>Yes</td><td>OpenRouter API key for LLM access</td></tr>
+        <tr><td><code>ALPACA_API_KEY</code></td><td>Yes*</td><td>Alpaca Markets API key (US equities)</td></tr>
+        <tr><td><code>ALPACA_SECRET_KEY</code></td><td>Yes*</td><td>Alpaca Markets secret key</td></tr>
+        <tr><td><code>FMP_API_KEY</code></td><td>No</td><td>Financial Modeling Prep (fundamentals)</td></tr>
+        <tr><td><code>FINNHUB_API_KEY</code></td><td>No</td><td>Finnhub API key (real-time prices)</td></tr>
+        <tr><td><code>DB_PATH</code></td><td>No</td><td>SQLite path (default: sora.db)</td></tr>
+        <tr><td><code>DEFAULT_MODEL</code></td><td>No</td><td>Default LLM model</td></tr>
+        <tr><td><code>FAST_MODEL</code></td><td>No</td><td>Fast model for Bull/Bear agents</td></tr>
+        <tr><td><code>ANALYSIS_MODEL</code></td><td>No</td><td>Model for Analyst synthesis</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note"><i class="fas fa-info-circle" aria-hidden="true"></i> *Required for US equities. Crypto works without Alpaca keys. Bot gracefully degrades when optional API keys are missing.</div>
+
+  <div class="section-header" style="margin-top:48px">
+    <div class="section-icon"><i class="fas fa-terminal" aria-hidden="true"></i></div>
+    <h2>Usage</h2>
+    <span class="accent-line"></span>
+  </div>
+  <div class="code-block">
+    <div class="code-hdr">
+      <div class="code-dots"><span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span></div>
+      <button class="code-copy" onclick="copyCode(this)" aria-label="Copy code">copy</button>
+    </div>
+    <pre><code><span class="cm"># Start the bot (runs until Ctrl+C)</span>
+python bot.py
+
+<span class="cm"># Run tests</span>
+pytest tests/ -v
+
+<span class="cm"># Initialize / reset database</span>
+python -c <span class="str">"from db.store import init_db; init_db()"</span></code></pre>
+  </div>
+  <div class="prose">
+    <p>Bot starts two concurrent asyncio tasks:</p>
+    <ol>
+      <li><strong>Telegram polling loop</strong> — receives commands and chat messages, delivers reports</li>
+      <li><strong>Scheduler daemon</strong> — runs automated scans at market-appropriate times</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ── COMMANDS ── -->
+<section id="commands" class="reveal">
+  <div class="section-header">
+    <div class="section-icon"><i class="fas fa-keyboard" aria-hidden="true"></i></div>
+    <h2>Telegram Commands</h2>
+    <span class="accent-line"></span>
+  </div>
+
+  <div class="cmd-group">
+    <h4><i class="fas fa-search" style="color:var(--gold)" aria-hidden="true"></i> Analysis</h4>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Command</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>/analyze SYMBOL</code></td><td>Quick technical signal (~30s)</td></tr>
+          <tr><td><code>/analyze SYMBOL -full</code></td><td>Deep multi-agent LLM report (~90s)</td></tr>
+          <tr><td><code>/analyze SYMBOL -mm</code></td><td>Moomoo 5-step framework analysis</td></tr>
+          <tr><td><code>/analyze SYMBOL -swing</code></td><td>Force swing timeframe</td></tr>
+          <tr><td><code>/analyze SYMBOL -long</code></td><td>Force long-term timeframe</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="cmd-group">
+    <h4><i class="fas fa-list" style="color:var(--cyan)" aria-hidden="true"></i> Watchlist</h4>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Command</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>/watchlist -add SYMBOL</code></td><td>Add symbol to watchlist</td></tr>
+          <tr><td><code>/watchlist -remove SYMBOL</code></td><td>Remove symbol from watchlist</td></tr>
+          <tr><td><code>/watchlist -ls</code></td><td>List all watchlist symbols</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="cmd-group">
+    <h4><i class="fas fa-map-pin" style="color:var(--gold)" aria-hidden="true"></i> Positions</h4>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Command</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>/position -add SYMBOL PRICE [QTY] [sl:X] [tp:X]</code></td><td>Log a new position</td></tr>
+          <tr><td><code>/position -ls</code></td><td>List open positions</td></tr>
+          <tr><td><code>/position -close SYMBOL</code></td><td>Close a position</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="cmd-group">
+    <h4><i class="fas fa-book" style="color:var(--cyan)" aria-hidden="true"></i> Knowledge</h4>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Command</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>/note "text"</code></td><td>Save a free-form thought</td></tr>
+          <tr><td><code>/note -symbol SYMBOL "text"</code></td><td>Save a symbol-specific note</td></tr>
+          <tr><td><code>/strategy add "rule"</code></td><td>Add a strategy rule</td></tr>
+          <tr><td><code>/wiki TOPIC</code></td><td>View wiki page (strategy/patterns/lessons/regime/symbol)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="cmd-group">
+    <h4><i class="fas fa-exchange-alt" style="color:var(--gold)" aria-hidden="true"></i> Feedback</h4>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Command</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>/trade SYMBOL took|skip|partial [reason]</code></td><td>Log trade action</td></tr>
+          <tr><td><code>/history SYMBOL 7d</code></td><td>View signal history</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="cmd-group">
+    <h4><i class="fas fa-microscope" style="color:var(--cyan)" aria-hidden="true"></i> Drill-Down</h4>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Command</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>/reasoning SYMBOL</code></td><td>Technical breakdown (LLM-powered)</td></tr>
+          <tr><td><code>/backtest SYMBOL 6m</code></td><td>Backtest strategies on symbol</td></tr>
+          <tr><td><code>/catalyst SYMBOL</code></td><td>News catalyst analysis</td></tr>
+          <tr><td><code>/sentiment SYMBOL</code></td><td>Sentiment analysis</td></tr>
+          <tr><td><code>/why SYMBOL</code></td><td>Entry rationale</td></tr>
+          <tr><td><code>/think SYMBOL "thesis"</code></td><td>Save a trading thesis</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="cmd-group">
+    <h4><i class="fas fa-cog" style="color:var(--gold)" aria-hidden="true"></i> System</h4>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Command</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>/scan</code></td><td>Scan entire watchlist (full pipeline)</td></tr>
+          <tr><td><code>/scan -quick</code></td><td>Quick technical scores only</td></tr>
+          <tr><td><code>/regime</code></td><td>Current market regime (US + Crypto)</td></tr>
+          <tr><td><code>/profile</code></td><td>View your trading profile</td></tr>
+          <tr><td><code>/status</code></td><td>System health and status</td></tr>
+          <tr><td><code>/help</code></td><td>Command reference</td></tr>
+          <tr><td><code>/clear</code></td><td>Clear pending updates</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="subsection" style="margin-top:28px">
+    <h3><i class="fas fa-comment" aria-hidden="true"></i> Free-Form Chat</h3>
+    <div class="prose">
+      <p>Any message not starting with <code>/</code> is routed to the LLM-powered chat agent with access to tools: <code>analyze_symbol</code>, <code>get_recent_signals</code>, <code>get_watchlist</code>, <code>get_lessons</code>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── EXTENDING ── -->
+<section id="extending" class="reveal">
+  <div class="section-header">
+    <div class="section-icon"><i class="fas fa-puzzle-piece" aria-hidden="true"></i></div>
+    <h2>Extending</h2>
+    <span class="accent-line"></span>
+  </div>
+
+  <div class="subsection">
+    <h3>Adding a New Strategy</h3>
+    <ol class="prose">
+      <li>Create a new class in <code>engine/strategies.py</code> inheriting from <code>Strategy</code></li>
+      <li>Define <code>name</code>, <code>description</code>, <code>category</code>, <code>difficulty</code>, <code>compatible_regimes</code>, <code>risk_params</code>, <code>min_confidence</code></li>
+      <li>Implement <code>evaluate()</code> returning a <code>StrategySignal</code> or <code>None</code></li>
+      <li>Register it: add <code>register(YourStrategy())</code> at module level</li>
+    </ol>
+  </div>
+
+  <div class="subsection">
+    <h3>Adding a New Data Source</h3>
+    <ol class="prose">
+      <li>Create a module in <code>data/</code> returning bars: <code>{"time": int, "open": float, "high": float, "low": float, "close": float, "volume": float}</code></li>
+      <li>Update <code>_fetch_bars()</code> in <code>orchestrator.py</code> to dispatch to new source</li>
+      <li>Update <code>_detect_market()</code> and crypto symbol set</li>
+    </ol>
+  </div>
+
+  <div class="subsection">
+    <h3>Adding a New Analysis Module</h3>
+    <ol class="prose">
+      <li>Create a module in <code>analysis/</code></li>
+      <li>Import and call from <code>_run_full_analysis()</code> in <code>orchestrator.py</code></li>
+      <li>Data is passed to Bull/Bear/Analyst agents as context</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ── KNOWLEDGE GRAPH ── -->
+<section id="knowledge-graph" class="reveal">
+  <div class="section-header">
+    <div class="section-icon"><i class="fas fa-project-diagram" aria-hidden="true"></i></div>
+    <h2>Knowledge Graph</h2>
+    <span class="accent-line"></span>
+  </div>
+  <div class="prose">
+    <p>Interactive knowledge graph available at <code>graphify-out/graph.html</code> — generated from full codebase structure. 482 nodes, 1033 edges, 45 communities. Open in browser to explore module connections.</p>
+  </div>
+</section>
+
+</div><!-- /content -->
+
+<!-- ── FOOTER ── -->
+<footer>
+  <div class="footer-links">
+    <a href="#overview">Overview</a>
+    <a href="#features">Features</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#tech-stack">Tech Stack</a>
+    <a href="#setup">Setup</a>
+    <a href="#commands">Commands</a>
+    <a href="graphify-out/graph.html">Knowledge Graph</a>
+  </div>
+  <p>Sora Trading Bot v2 &mdash; Personal-use AI trading signal agent</p>
+  <p style="margin-top:8px;font-size:12px;color:var(--text3)">Knowledge graph: <a href="graphify-out/graph.html">graphify-out/graph.html</a></p>
+</footer>
+
+<!-- ── SCRIPTS ── -->
+<script>
+// Mermaid init
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'dark',
+  themeVariables: {
+    darkMode: true,
+    background: '#1a2035',
+    primaryColor: '#f0b90b',
+    primaryTextColor: '#f8fafc',
+    secondaryColor: '#00d4aa',
+    lineColor: '#2a3a55',
+    fontSize: '13px',
+    fontFamily: 'Inter, sans-serif'
+  }
+});
+
+// ── Particles ──
+(function() {
+  const wrap = document.getElementById('particles');
+  const colors = ['#f0b90b','#00d4aa','#22c55e','#94a3b8'];
+  for (let i = 0; i < 18; i++) {
+    const p = document.createElement('div');
+    const size = 2 + Math.random() * 4;
+    const dur = 8 + Math.random() * 14;
+    const delay = Math.random() * dur;
+    p.className = 'particle';
+    p.style.cssText = [
+      `width:${size}px`, `height:${size}px`,
+      `left:${Math.random()*100}%`,
+      `background:${colors[i % colors.length]}`,
+      `opacity:${.3 + Math.random()*.4}`,
+      `animation:pFloat ${dur}s ${delay}s linear infinite`
+    ].join(';');
+    wrap.appendChild(p);
+  }
+})();
+
+// ── Scroll reveal ──
+const revealObs = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+}, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
+document.querySelectorAll('section.reveal').forEach(el => revealObs.observe(el));
+
+// ── Nav scroll & active link ──
+const navbar = document.getElementById('navbar');
+const sections = document.querySelectorAll('section[id]');
+const navLinks = document.querySelectorAll('.nav-link');
+
+window.addEventListener('scroll', () => {
+  navbar.classList.toggle('scrolled', window.scrollY > 60);
+  let current = '';
+  sections.forEach(s => {
+    if (window.scrollY >= s.offsetTop - 140) current = s.id;
+  });
+  navLinks.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + current));
+}, { passive: true });
+
+// ── Animated stat counters ──
+const counterObs = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (!entry.isIntersecting) return;
+    const el = entry.target;
+    const target = parseInt(el.dataset.count, 10);
+    if (!target) return;
+    let cur = 0;
+    const step = Math.max(1, Math.ceil(target / 40));
+    const t = setInterval(() => {
+      cur = Math.min(cur + step, target);
+      el.textContent = cur;
+      if (cur >= target) clearInterval(t);
+    }, 40);
+    counterObs.unobserve(el);
+  });
+}, { threshold: 0.5 });
+document.querySelectorAll('.hero-stat-num[data-count]').forEach(el => counterObs.observe(el));
+
+// ── Copy to clipboard ──
+function copyCode(btn) {
+  const pre = btn.closest('.code-block').querySelector('pre');
+  navigator.clipboard.writeText(pre.textContent.trim()).then(() => {
+    btn.textContent = 'copied!';
+    btn.style.color = 'var(--green)';
+    btn.style.borderColor = 'var(--green)';
+    setTimeout(() => {
+      btn.textContent = 'copy';
+      btn.style.color = '';
+      btn.style.borderColor = '';
+    }, 2000);
+  }).catch(() => {
+    btn.textContent = 'error';
+    setTimeout(() => { btn.textContent = 'copy'; }, 2000);
+  });
+}
+</script>
+</body>
+</html>
