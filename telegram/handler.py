@@ -1,4 +1,5 @@
 import asyncio
+import html as _html
 import json
 import os
 import re
@@ -79,6 +80,14 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 API_BASE = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 
+# Telegram-supported HTML tags — strip only these, preserve everything else
+_HTML_TAGS = re.compile(r"</?(b|i|u|s|code|pre|a|tg-spoiler)(\s[^>]*)?>", re.IGNORECASE)
+
+def _html_to_plain(text: str) -> str:
+    """Strip Telegram HTML tags and unescape entities for plain-text fallback."""
+    stripped = _HTML_TAGS.sub("", text)
+    return _html.unescape(stripped)
+
 
 class TelegramHandler:
     def __init__(self):
@@ -90,6 +99,8 @@ class TelegramHandler:
         self.http_client = None
         self._llm = LLMClient()
         self._chat_history: list[dict] = []
+        self.last_poll_at: float = time.monotonic()
+        self.poll_errors: int = 0
 
     async def _ensure_client(self):
         if self.http_client is None and httpx is not None:
@@ -100,23 +111,39 @@ class TelegramHandler:
             return
         await self._ensure_client()
         url = f"{self.base_url}/sendMessage"
-        payload = {
-            "chat_id": chat_id or self.chat_id,
-            "text": text,
-            "parse_mode": parse_mode,
-            "disable_web_page_preview": True,
-        }
-        try:
+
+        async def _post(txt, mode):
+            payload = {
+                "chat_id": chat_id or self.chat_id,
+                "text": txt,
+                "parse_mode": mode,
+                "disable_web_page_preview": True,
+            }
             t0 = time.monotonic()
             r = await self.http_client.post(url, json=payload)
             elapsed = time.monotonic() - t0
-            data = r.json()
+            return r.json(), elapsed
+
+        try:
+            data, elapsed = await _post(text, parse_mode)
             if data.get("ok"):
                 log.http("sendMessage OK  %.1fs", elapsed)
+                return data
+            desc = data.get("description", "")
+            # HTML parse error — strip tags, retry as plain text
+            if parse_mode == "HTML" and "can't parse entities" in desc:
+                log.warning("sendMessage HTML parse error — retrying as plain text: %s", desc)
+                plain = _html_to_plain(text)
+                data, elapsed = await _post(plain, None)
+                if data.get("ok"):
+                    log.http("sendMessage OK (plain fallback)  %.1fs", elapsed)
+                else:
+                    log.http("sendMessage FAIL  %.1fs  %s", elapsed, data.get("description", ""))
             else:
-                log.http("sendMessage FAIL  %.1fs  %s", elapsed, data.get("description", ""))
+                log.http("sendMessage FAIL  %.1fs  %s", elapsed, desc)
             return data
         except Exception as e:
+            log.error("sendMessage exception: %s", e)
             return None
 
     async def send_photo(self, photo_bytes, caption="", chat_id=None):
@@ -161,9 +188,14 @@ class TelegramHandler:
             elapsed = time.monotonic() - t0
             data = r.json()
             updates = len(data.get("result", []))
+            self.last_poll_at = time.monotonic()
+            self.poll_errors = 0
             if updates:
                 log.http("getUpdates OK  %d updates  %.1fs", updates, elapsed)
-        except Exception:
+        except Exception as e:
+            self.poll_errors += 1
+            if self.poll_errors % 5 == 1:
+                print(f"[Telegram] ❌ Poll error #{self.poll_errors}: {e}")
             return offset
 
         if not data.get("ok"):
@@ -173,7 +205,7 @@ class TelegramHandler:
             new_offset = update["update_id"] + 1
             if new_offset > offset:
                 offset = new_offset
-            await self._handle_update(update)
+            asyncio.create_task(self._handle_update(update))
 
         return offset
 
@@ -251,7 +283,7 @@ class TelegramHandler:
         is_full = "-full" in flags
         is_swing = "-swing" in flags
         is_long = "-long" in flags
-        is_moomoo = "-mm" in flags
+        is_moomoo = "-mm" in flags or "-moomoo" in flags
 
         label = "Moomoo" if is_moomoo else "Full" if is_full else "Swing" if is_swing else "Quick"
         await self.send_message(f"Analyzing {symbol} ({label})...", chat_id=chat_id)
@@ -444,14 +476,32 @@ class TelegramHandler:
         await self.send_message(format_status(status), chat_id=chat_id)
 
     async def _handle_regime(self, args, chat_id):
-        try:
-            from engine.regime import get_regime
-            regime = await get_regime()
-        except ImportError:
-            regime = {
-                "us": {"regime": "N/A", "trend": "N/A", "adx": "N/A"},
-                "crypto": {"regime": "N/A", "btc_change": 0},
-            }
+        from engine.regime import detect_regime, fetch_spy_bars
+        us_bars = await asyncio.to_thread(fetch_spy_bars, 90, "us")
+        crypto_bars = await asyncio.to_thread(fetch_spy_bars, 90, "crypto")
+        us_r = await asyncio.to_thread(detect_regime, us_bars, "us")
+        crypto_r = await asyncio.to_thread(detect_regime, crypto_bars, "crypto")
+
+        spy_price = us_bars[-1]["close"] if us_bars else None
+        spy_change = ((us_bars[-1]["close"] - us_bars[-2]["close"]) / us_bars[-2]["close"] * 100) if len(us_bars) >= 2 else None
+        btc_price = crypto_bars[-1]["close"] if crypto_bars else None
+        btc_change = ((crypto_bars[-1]["close"] - crypto_bars[-2]["close"]) / crypto_bars[-2]["close"] * 100) if len(crypto_bars) >= 2 else None
+
+        regime = {
+            "us": {
+                "regime": us_r.regime,
+                "trend": f"{us_r.trend_strength:+.3f}",
+                "adx": f"{us_r.adx:.1f}",
+                "spy_price": spy_price,
+                "spy_change": spy_change,
+            },
+            "crypto": {
+                "regime": crypto_r.regime,
+                "btc_price": btc_price,
+                "btc_change": btc_change,
+                "btc_dominance": "N/A",
+            },
+        }
         await self.send_message(format_regime(regime), chat_id=chat_id)
 
     async def _handle_scan(self, args, chat_id):
@@ -551,40 +601,110 @@ class TelegramHandler:
             await self.send_message("Usage: /reasoning SYMBOL", chat_id=chat_id)
             return
         symbol = args.strip().upper()
-        await self.send_message(
-            f"<b>Technical Breakdown: {symbol}</b>\n\nReasoning requires LLM module. Coming soon.",
-            chat_id=chat_id,
-        )
+        await self.send_action("typing", chat_id=chat_id)
+        from engine.orchestrator import _fetch_bars, _compute_indicators
+        market = self._detect_market(symbol)
+        bars = await asyncio.to_thread(_fetch_bars, symbol, market)
+        if not bars or len(bars) < 20:
+            await self.send_message(f"Insufficient data for {symbol}.", chat_id=chat_id)
+            return
+        ind = await asyncio.to_thread(_compute_indicators, symbol, bars)
+        price = ind.get("price", 0)
+        lines = [
+            f"<b>Technical Breakdown: {symbol}</b>",
+            f"Price  ${price:.2f}",
+            "",
+            "<b>Trend</b>",
+            f"  EMA9:    ${ind.get('ema_9', 0):.2f}  {'↑ above' if price > ind.get('ema_9', 0) else '↓ below'}",
+            f"  EMA20:   ${ind.get('ema_20', 0):.2f}  {'↑ above' if price > ind.get('ema_20', 0) else '↓ below'}",
+            f"  EMA50:   ${ind.get('ema_50', 0):.2f}  {'↑ above' if price > ind.get('ema_50', 0) else '↓ below'}",
+            f"  SMA200:  ${ind.get('sma_200', 0):.2f}  {'↑ above' if price > ind.get('sma_200', 0) else '↓ below'}",
+            f"  ADX:     {ind.get('adx', 0):.1f}  ({'trending' if ind.get('adx', 0) > 25 else 'ranging'})",
+            "",
+            "<b>Momentum</b>",
+            f"  RSI(14): {ind.get('rsi_14', 0):.1f}",
+            f"  Stoch K: {ind.get('stoch_k', 0):.1f}  D: {ind.get('stoch_d', 0):.1f}",
+            f"  W%R:     {ind.get('williams_r', 0):.1f}",
+            f"  MACD:    {ind.get('macd', 0):.3f}  Signal: {ind.get('macd_signal', 0):.3f}  Hist: {ind.get('macd_hist', 0):.3f}",
+            "",
+            "<b>Volume / Volatility</b>",
+            f"  Vol ratio:  {ind.get('volume_ratio', 0):.2f}x 21d avg",
+            f"  ATR(14):    {ind.get('atr_14', 0):.2f}",
+            f"  BB width:   {ind.get('bb_width', 0):.3f}",
+            f"  Supertrend: {ind.get('supertrend_trend', 'N/A').upper()}  @ ${ind.get('supertrend_line', 0):.2f}",
+            f"  VWAP(20):   ${ind.get('vwap_20', 0):.2f}",
+        ]
+        await self.send_message("\n".join(lines), chat_id=chat_id)
 
     async def _handle_catalyst(self, args, chat_id):
         if not args:
             await self.send_message("Usage: /catalyst SYMBOL", chat_id=chat_id)
             return
         symbol = args.strip().upper()
-        await self.send_message(
-            f"<b>Catalyst: {symbol}</b>\n\nCatalyst analysis requires news module. Coming soon.",
-            chat_id=chat_id,
-        )
+        await self.send_action("typing", chat_id=chat_id)
+        from analysis.news import fetch_news
+        market = self._detect_market(symbol)
+        source = "cryptopanic" if market == "crypto" else "yahoo"
+        articles = await asyncio.to_thread(fetch_news, symbol, source)
+
+        lines = [f"<b>Catalysts: {symbol}</b>", ""]
+        if not articles:
+            lines.append("<i>No recent news found.</i>")
+        else:
+            for a in articles[:8]:
+                title = a.get("title", "")[:100]
+                date = (a.get("published_at") or "")[:10]
+                lines.append(f"  <b>{date}</b>  {title}")
+        await self.send_message("\n".join(lines), chat_id=chat_id)
 
     async def _handle_sentiment(self, args, chat_id):
         if not args:
             await self.send_message("Usage: /sentiment SYMBOL", chat_id=chat_id)
             return
         symbol = args.strip().upper()
-        await self.send_message(
-            f"<b>Sentiment: {symbol}</b>\n\nSentiment analysis requires sentiment module. Coming soon.",
-            chat_id=chat_id,
-        )
+        await self.send_action("typing", chat_id=chat_id)
+        from analysis.sentiment import get_sentiment
+        market = self._detect_market(symbol)
+        result = await asyncio.to_thread(get_sentiment, symbol, market)
+
+        overall = result.get("overall", "neutral").upper()
+        score = result.get("score", 0.0)
+        signals = result.get("signals", [])
+
+        emoji = "🟢" if overall == "BULLISH" else "🔴" if overall == "BEARISH" else "⚪"
+        lines = [f"<b>Sentiment: {symbol}</b>", "", f"{emoji} <b>{overall}</b>  (score: {score:+.2f})", ""]
+        if signals:
+            lines.append("<b>Headlines</b>")
+            for s in signals[:5]:
+                icon = "↑" if s["sentiment"] == "bullish" else "↓"
+                lines.append(f"  {icon} {s['headline'][:80]}")
+        else:
+            lines.append("<i>No headlines found.</i>")
+        await self.send_message("\n".join(lines), chat_id=chat_id)
 
     async def _handle_why(self, args, chat_id):
         if not args:
             await self.send_message("Usage: /why SYMBOL", chat_id=chat_id)
             return
         symbol = args.strip().upper()
-        await self.send_message(
-            f"<b>Entry Rationale: {symbol}</b>\n\nDetailed rationale requires analysis module. Coming soon.",
-            chat_id=chat_id,
-        )
+        await self.send_action("typing", chat_id=chat_id)
+        from engine.orchestrator import run_analysis
+        signal = await run_analysis(symbol=symbol)
+        verdict = signal.get("verdict", "HOLD")
+        reason = signal.get("reason", "N/A")
+        strategy = signal.get("strategy", "N/A")
+        confidence = signal.get("confidence", 0)
+        scorecard = signal.get("gate_scorecard", "")
+        lines = [
+            f"<b>Why {symbol}?</b>",
+            "",
+            f"Verdict:    <b>{verdict}</b>  ({confidence:.0f}/100)",
+            f"Strategy:   {strategy}",
+            f"Reason:     {reason}",
+        ]
+        if scorecard:
+            lines += ["", "<b>Gate Scorecard</b>", _html.escape(scorecard)]
+        await self.send_message("\n".join(lines), chat_id=chat_id)
 
     async def _handle_think(self, args, chat_id):
         if not args:

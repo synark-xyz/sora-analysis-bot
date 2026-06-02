@@ -23,4 +23,5 @@ docs/superpowers/
 node_modules/
 .tg_offset
 .omo/
+graphify-out/
 index-preview.png
