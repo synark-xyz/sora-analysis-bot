@@ -1,0 +1,16 @@
+[Unit]
+Description=Sora Telegram Bot
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/opt/sora-analysis-bot
+EnvironmentFile=/opt/sora-analysis-bot/.env
+ExecStart=/opt/sora-analysis-bot/.venv/bin/python bot.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
