@@ -19,11 +19,15 @@ Principles:
 """
 
 import math
+import traceback
 from datetime import datetime, timezone, timedelta
 
 from engine.strategies import StrategySelector, SignalDirection, StrategySignal
 from engine.confidence import ConfidenceEngine
 from engine.regime import detect_regime, RegimeResult
+from log import get_logger
+
+log = get_logger("engine.orchestrator", "ENGINE")
 
 
 _confidence_engine = ConfidenceEngine()
@@ -34,6 +38,7 @@ def run_pipeline(symbol: str, market: str = 'us', timeframe: str = 'swing') -> d
     try:
         bars = _fetch_bars(symbol, market)
         if not bars or len(bars) < 20:
+            log.error("run_pipeline %s: insufficient bars (%d)", symbol, len(bars) if bars else 0)
             return None
 
         indicators = _compute_indicators(symbol, bars)
@@ -41,7 +46,14 @@ def run_pipeline(symbol: str, market: str = 'us', timeframe: str = 'swing') -> d
         regime = detect_regime()
         strategy_result = _select_strategy(indicators, bars, regime, symbol)
         if strategy_result is None:
-            return None
+            vol_ratio = indicators.get("volume_ratio", 0)
+            rsi = indicators.get("rsi_14", 0)
+            log.warning("run_pipeline %s: no strategy triggered (regime=%s, vol=%.2fx, rsi=%.1f)", symbol, regime.regime, vol_ratio, rsi)
+            return _build_result(
+                symbol=symbol, verdict="HOLD", confidence=0,
+                strategy="N/A", reason=f"No strategy triggered — vol={vol_ratio:.2f}x 21d avg, RSI={rsi:.1f}, regime={regime.regime}",
+                regime=regime.regime, indicators=indicators,
+            )
 
         strategy, signal = strategy_result
 
@@ -116,6 +128,7 @@ def run_pipeline(symbol: str, market: str = 'us', timeframe: str = 'swing') -> d
         return result
 
     except Exception as e:
+        log.error("run_pipeline failed for %s: %s\n%s", symbol, e, traceback.format_exc())
         return None
 
 
@@ -682,7 +695,7 @@ def _empty_result(symbol: str, market: str) -> dict:
     }
 
 
-async def _run_full_analysis(symbol: str, market: str) -> dict:
+async def _run_full_analysis(symbol: str, market: str, timeframe: str = "swing") -> dict:
     try:
         from llm.analyst import analyze_full
 
@@ -766,7 +779,9 @@ async def _run_full_analysis(symbol: str, market: str) -> dict:
         except Exception:
             pass
 
-        # Append earnings + conviction notes to wiki_context
+        # Append timeframe, earnings + conviction notes to wiki_context
+        if timeframe == "long":
+            wiki_context = f"ANALYSIS TIMEFRAME: Long-term position trade (weeks–months). Focus on SMA200, weekly support/resistance, macro regime, and fundamental quality. Ignore short-term noise.\n\n{wiki_context}".strip()
         if earnings_note:
             wiki_context = f"{wiki_context}\n\n{earnings_note}".strip()
         if conviction_note:
@@ -863,8 +878,88 @@ async def _run_moomoo_analysis(symbol: str, market: str) -> dict:
             valuation=valuation,
             wiki_context=wiki_context,
         )
-    except ImportError:
+    except ImportError as e:
+        print(f"[Moomoo] ImportError: {e}")
         return {}
+    except Exception as e:
+        import traceback
+        print(f"[Moomoo] ❌ ERROR for {symbol}: {e}")
+        traceback.print_exc()
+        return {}
+
+
+async def run_backtest(symbol: str, period: str = "6m") -> list[dict]:
+    import asyncio
+    from engine.strategies import get_strategies_for_regime, SignalDirection
+
+    _PERIOD_DAYS = {"1m": 30, "3m": 60, "6m": 90, "1y": 252}
+    max_bars = _PERIOD_DAYS.get(period.lower(), 90)
+
+    market = _detect_market(symbol)
+    bars = await asyncio.to_thread(_fetch_bars, symbol, market)
+    if len(bars) < 30:
+        return []
+    bars = bars[-max_bars:] if len(bars) > max_bars else bars
+
+    candidates = get_strategies_for_regime("NEUTRAL")
+    results = []
+
+    for strategy in candidates:
+        trades = []
+        last_exit_idx = 0
+        min_window = 30
+
+        for i in range(min_window, len(bars)):
+            if i <= last_exit_idx:
+                continue
+            window = bars[:i]
+            try:
+                indicators = _compute_indicators(symbol, window)
+                signal = strategy.evaluate(indicators, window, "NEUTRAL")
+            except Exception:
+                continue
+            if signal is None or signal.direction == SignalDirection.FLAT:
+                continue
+
+            entry_price = bars[i - 1]["close"]
+            hold = strategy.risk_params.max_holding_days
+            exit_idx = min(i - 1 + hold, len(bars) - 1)
+            if exit_idx <= i - 1:
+                continue
+            exit_price = bars[exit_idx]["close"]
+
+            if signal.direction.value == "LONG":
+                ret = (exit_price - entry_price) / entry_price * 100
+            else:
+                ret = (entry_price - exit_price) / entry_price * 100
+
+            trades.append(ret)
+            last_exit_idx = exit_idx
+
+        if not trades:
+            continue
+
+        wins = [t for t in trades if t > 0]
+        avg_ret = sum(trades) / len(trades)
+
+        cumulative = peak = max_dd = 0.0
+        for t in trades:
+            cumulative += t
+            if cumulative > peak:
+                peak = cumulative
+            if cumulative - peak < max_dd:
+                max_dd = cumulative - peak
+
+        results.append({
+            "strategy": strategy.name,
+            "win_rate": round(len(wins) / len(trades) * 100, 1),
+            "trades": len(trades),
+            "wins": len(wins),
+            "avg_return": round(avg_ret, 2),
+            "max_drawdown": round(max_dd, 2),
+        })
+
+    return sorted(results, key=lambda x: x["win_rate"], reverse=True)
 
 
 async def run_analysis(
@@ -880,6 +975,7 @@ async def run_analysis(
 
     result = await asyncio.to_thread(run_pipeline, symbol, market, timeframe)
     if result is None:
+        log.error("run_analysis %s: run_pipeline returned None — returning empty result", symbol)
         return _empty_result(symbol, market)
 
     result["market"] = market
@@ -890,6 +986,20 @@ async def run_analysis(
         if llm_result:
             result.update(llm_result)
             result["timeframe"] = "Moomoo (Full Framework)"
+        else:
+            print(f"[Moomoo] ⚠️  {symbol}: LLM returned empty — falling back to basic analysis")
+    elif long_term:
+        llm_result = await _run_full_analysis(symbol, market, timeframe="long")
+        if llm_result:
+            result["llm_report"] = True
+            bull = llm_result.pop("bull_thesis", "")
+            bear = llm_result.pop("bear_thesis", "")
+            result.update(llm_result)
+            if bull:
+                result["bull_thesis"] = bull
+            if bear:
+                result["bear_thesis"] = bear
+            result["timeframe"] = "Position (weeks–months)"
     elif full:
         llm_result = await _run_full_analysis(symbol, market)
         if llm_result:

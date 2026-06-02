@@ -53,5 +53,6 @@ def fetch_bars(symbol: str, days: int = 90) -> list[dict]:
             }
             for c in data
         ]
-    except Exception:
+    except Exception as e:
+        log.error("Binance fetch failed for %s: %s", symbol, e)
         return []

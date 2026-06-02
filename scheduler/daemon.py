@@ -1,5 +1,7 @@
 import asyncio
 import hashlib
+import time
+import traceback
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
 
@@ -70,15 +72,26 @@ class Daemon:
         self.running = True
         self._last_scans = {}
         self._seen_news: set = set()
+        self.last_tick_at: float = time.monotonic()
+        self.tick_count: int = 0
+        self.last_scan_label: str = "none"
 
     async def run(self):
         print("[Daemon] Started")
 
         while self.running:
             try:
-                await self._tick()
+                await asyncio.wait_for(self._tick(), timeout=300)
+            except asyncio.TimeoutError:
+                print(f"[Daemon] ⚠️  TICK TIMEOUT — _tick() hung >5min. Skipping cycle.")
             except Exception as e:
-                print(f"[Daemon] Error: {e}")
+                print(f"[Daemon] ❌ ERROR: {e}")
+                traceback.print_exc()
+            self.last_tick_at = time.monotonic()
+            self.tick_count += 1
+            if self.tick_count % 10 == 0:
+                now_et = datetime.now(ET).strftime("%H:%M:%S ET")
+                print(f"[Daemon] ♥  alive | tick #{self.tick_count} | {now_et} | last scan: {self.last_scan_label}")
             await asyncio.sleep(30)
 
     async def _tick(self):
@@ -127,6 +140,7 @@ class Daemon:
                 await self._run_weekly_review()
 
     async def _run_us_scan(self, scan_name):
+        self.last_scan_label = f"us:{scan_name}"
         print(f"[Daemon] US scan starting: {scan_name}")
         try:
             from engine.orchestrator import run_pipeline
@@ -175,6 +189,7 @@ class Daemon:
             print(f"[Daemon] Scan error: {e}")
 
     async def _run_crypto_scan(self):
+        self.last_scan_label = "crypto"
         print("[Daemon] Crypto scan starting")
         try:
             from engine.orchestrator import run_pipeline

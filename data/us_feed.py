@@ -55,8 +55,8 @@ def fetch_bars(symbol: str, days: int = 90) -> list[dict]:
         log.http("Alpaca %s  %d bars  %.1fs", symbol, len(bars), elapsed)
         if bars:
             return bars
-    except Exception:
-        pass
+    except Exception as e:
+        log.error("Alpaca fetch failed for %s: %s", symbol, e)
 
     return _mock_bars()
 

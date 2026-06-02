@@ -8,7 +8,7 @@ Sources:
 
 import time
 import requests
-from xml.etree import ElementTree
+import defusedxml.ElementTree as ElementTree
 from datetime import datetime
 
 from log import get_logger
@@ -23,6 +23,12 @@ def fetch_news(symbol: str, source: str = "yahoo") -> list[dict]:
     if source == "cryptopanic":
         return _fetch_cryptopanic()
 
+    # Try yfinance first — more reliable than Yahoo RSS
+    items = _fetch_yfinance(symbol)
+    if items:
+        return items
+
+    # Fallback: Yahoo RSS
     url = YAHOO_FEED.format(symbol=symbol.upper())
     try:
         t0 = time.monotonic()
@@ -52,6 +58,34 @@ def fetch_news(symbol: str, source: str = "yahoo") -> list[dict]:
         log.http("Yahoo RSS %s  %d items  %.1fs", symbol, len(items), elapsed)
         return items
     except Exception:
+        return []
+
+
+def _fetch_yfinance(symbol: str) -> list[dict]:
+    try:
+        import yfinance as yf
+        t0 = time.monotonic()
+        ticker = yf.Ticker(symbol.upper())
+        raw = ticker.news or []
+        elapsed = time.monotonic() - t0
+        items = []
+        for a in raw:
+            content = a.get("content", {})
+            title = content.get("title", "")
+            summary = content.get("summary", "")
+            pub_date = content.get("pubDate", "")
+            if not title:
+                continue
+            items.append({
+                "title": title,
+                "summary": summary,
+                "url": "",
+                "published_at": pub_date[:10] if pub_date else None,
+            })
+        log.http("yfinance news %s  %d items  %.1fs", symbol, len(items), elapsed)
+        return items
+    except Exception as e:
+        log.error("yfinance news failed for %s: %s", symbol, e)
         return []
 
 
